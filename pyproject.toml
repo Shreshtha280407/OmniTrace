@@ -1,0 +1,31 @@
+[project]
+name = "omnitrace"
+version = "0.1.0"
+description = "OmniTrace — multimodal evidence pipeline for RAG-ready retrieval"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "motor>=3.6",
+  "pymongo>=4.10",
+  "pymupdf>=1.24",
+  "python-multipart>=0.0.12",
+  "httpx>=0.27",
+  "python-ulid>=2.7",
+]
+
+[project.optional-dependencies]
+# added in later phases — not required for P0/P1
+extract = [
+  "faster-whisper>=1.0",
+  "paddleocr>=2.9",
+  "anthropic>=0.40",
+  "voyageai>=0.3",
+  "numpy>=2.0",
+]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
+
+[tool.uv]
+package = false
