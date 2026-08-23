@@ -83,8 +83,18 @@ class Source(BaseModel):
     size_bytes: int
     duration_ms: int | None = None
     page_count: int | None = None
-    status: Literal["uploaded", "probing", "probed", "failed"] = "uploaded"
+    # Extraction stages are added incrementally (P2 audio, P3 visual, P4
+    # document); "partial_ready"/"ready" are computed by
+    # pipeline.runner.recompute_source_status by comparing completed
+    # ProcessingRuns against the stage list required for this media_type —
+    # see REQUIRED_STAGES there.
+    status: Literal["uploaded", "probing", "probed", "extracting", "partial_ready", "ready", "failed"] = "uploaded"
     storage_path: str
+    # One timeline per video/audio source, generated once (first extraction
+    # stage) and reused by every evidence item derived from it — §06: "A
+    # video-derived frame, OCR region, and utterance share the parent's
+    # timeline_id but keep distinct evidence IDs." Null for images/documents.
+    timeline_id: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
     model_config = {"populate_by_name": True}
@@ -147,6 +157,10 @@ class EvidenceItem(BaseModel):
     location: Location
     member_evidence_ids: list[str] = Field(default_factory=list)
     entity_ids: list[str] = Field(default_factory=list)
+    # Speech evidence only. §11 speaker integrity: a stable anonymous ID
+    # (e.g. "spk_01") unless a real name was verified from an explicit
+    # self-introduction — never a model-inferred guess.
+    speaker_id: str | None = None
     confidence: ExtractionConfidence = Field(default_factory=ExtractionConfidence)
     provenance: Provenance
     embeddings: Embeddings = Field(default_factory=Embeddings)

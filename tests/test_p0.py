@@ -4,16 +4,22 @@ Acceptance: round-trip a document through Pydantic <-> Mongo; both Atlas
 search indexes exist (PENDING or READY).
 
 Requires MONGODB_URI to point at a real Atlas cluster (or local mongod) —
-skips cleanly if it isn't configured yet, so `pytest` doesn't fail hard
-before Atlas is wired up.
+skips cleanly if it isn't configured yet.
+
+Uses plain synchronous PyMongo directly rather than the app's async Motor
+client — see tests/conftest.py's docstring for why a shared async client
+isn't safe to reuse across pytest-asyncio's per-test event loops. This test
+predates the app entirely (it's exercising the schema/DB layer directly,
+not an endpoint), so there's no live_server_url fixture involved here.
 """
 
 from __future__ import annotations
 
 import pytest
+from pymongo import MongoClient
 
 from omnitrace.config import get_settings
-from omnitrace.db import EVIDENCE_ITEMS, close_client, coll, ensure_indexes
+from omnitrace.db import EVIDENCE_ITEMS
 from omnitrace.ids import config_hash, new_id
 from omnitrace.models import EvidenceItem, Location, Provenance
 
@@ -23,12 +29,14 @@ def _mongo_configured() -> bool:
     return bool(uri) and "localhost" not in uri
 
 
-pytestmark = pytest.mark.asyncio
+def _db():
+    s = get_settings()
+    return MongoClient(s.mongodb_uri)[s.mongodb_db]
 
 
 @pytest.mark.skipif(not _mongo_configured(), reason="MONGODB_URI not set to a real Atlas cluster yet")
-async def test_evidence_item_roundtrip():
-    await ensure_indexes()
+def test_evidence_item_roundtrip():
+    db = _db()
 
     run_id = new_id("processing_run")
     item = EvidenceItem(
@@ -53,9 +61,9 @@ async def test_evidence_item_roundtrip():
     )
 
     doc = item.model_dump(by_alias=True)
-    await coll(EVIDENCE_ITEMS).insert_one(doc)
+    db[EVIDENCE_ITEMS].insert_one(doc)
 
-    fetched = await coll(EVIDENCE_ITEMS).find_one({"_id": item.id})
+    fetched = db[EVIDENCE_ITEMS].find_one({"_id": item.id})
     assert fetched is not None
     roundtripped = EvidenceItem.model_validate(fetched)
 
@@ -64,18 +72,11 @@ async def test_evidence_item_roundtrip():
     assert roundtripped.location.timeline_id is not None
     assert roundtripped.location.page is None  # never a fabricated page on video evidence
 
-    await coll(EVIDENCE_ITEMS).delete_one({"_id": item.id})
-    await close_client()
+    db[EVIDENCE_ITEMS].delete_one({"_id": item.id})
 
 
 @pytest.mark.skipif(not _mongo_configured(), reason="MONGODB_URI not set to a real Atlas cluster yet")
-async def test_search_indexes_exist():
-    from pymongo import MongoClient
-
-    settings = get_settings()
-    client = MongoClient(settings.mongodb_uri)
-    names = {ix["name"] for ix in client[settings.mongodb_db][EVIDENCE_ITEMS].list_search_indexes()}
-    client.close()
-
+def test_search_indexes_exist():
+    names = {ix["name"] for ix in _db()[EVIDENCE_ITEMS].list_search_indexes()}
     assert "ev_vec" in names, "run scripts/create_search_indexes.py first"
     assert "ev_text" in names, "run scripts/create_search_indexes.py first"

@@ -27,7 +27,7 @@ from omnitrace.config import get_settings
 from omnitrace.db import PROCESSING_RUNS, SOURCES, coll
 from omnitrace.ids import new_id, sha256_file
 from omnitrace.models import Source
-from pipeline.runner import run_probe_stage
+from pipeline.runner import run_extraction_stages, run_probe_stage
 
 router = APIRouter()
 
@@ -111,6 +111,7 @@ async def create_source(file: UploadFile = File(...)) -> SourceCreateResponse:
         await coll(SOURCES).insert_one(source.model_dump(by_alias=True))
 
         await run_probe_stage(source_id)
+        await run_extraction_stages(source_id)
 
         refreshed = await coll(SOURCES).find_one({"_id": source_id})
         assert refreshed is not None
