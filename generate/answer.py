@@ -36,13 +36,24 @@ def _client():
 
 def _call_model(question: str, evidence: list[dict[str, Any]]) -> dict[str, Any]:
     settings = get_settings()
-    resp = _client().messages.create(
-        model=settings.model_answer,
-        max_tokens=MAX_TOKENS,
-        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": build_user_message(question, evidence)}],
-        output_config={"effort": GENERATION_EFFORT, "format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
-    )
+    if not settings.anthropic_api_key:
+        # Fail fast with the same graceful-degradation contract every other
+        # provider-backed stage honors (see enrich/embed.py, pipeline/visual.py)
+        # rather than letting the SDK raise an opaque auth error below.
+        raise GenerationError("ANTHROPIC_API_KEY not configured")
+
+    try:
+        resp = _client().messages.create(
+            model=settings.model_answer,
+            max_tokens=MAX_TOKENS,
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": build_user_message(question, evidence)}],
+            output_config={"effort": GENERATION_EFFORT, "format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
+        )
+    except Exception as e:  # noqa: BLE001 — network/auth/rate-limit errors degrade like every
+        # other real network call in this codebase (Groq ASR/vision already do this); the
+        # caller (api/routes/query.py, eval/run.py) only ever needs to catch GenerationError.
+        raise GenerationError(f"Anthropic API call failed: {e}") from e
 
     # Check stop_reason BEFORE touching content — a refusal can return a
     # successful HTTP response with an empty content array (§04).
