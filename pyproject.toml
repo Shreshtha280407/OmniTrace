@@ -14,16 +14,18 @@ dependencies = [
   "python-multipart>=0.0.12",
   "httpx>=0.27",
   "python-ulid>=2.7",
+  # P2/P3 — no provider SDK; omnitrace/llm.py talks raw HTTP to Groq's
+  # OpenAI-compatible API (swappable to OpenAI later, see README).
+  "pytesseract>=0.3",
+  "pillow>=11.0",
+  "imagehash>=4.3",
+  "numpy>=2.0",
 ]
 
 [project.optional-dependencies]
-# added in later phases — not required for P0/P1
-extract = [
-  "faster-whisper>=1.0",
-  "paddleocr>=2.9",
-  "anthropic>=0.40",
-  "voyageai>=0.3",
-  "numpy>=2.0",
+# added in later phases — not required yet
+enrich = [
+  "voyageai>=0.3",  # P5 embeddings, if that phase stays on Voyage
 ]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 
