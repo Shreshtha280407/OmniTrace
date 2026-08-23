@@ -18,3 +18,9 @@ eval/candidates.csv
 eval/threshold_sweep.json
 eval/results.json
 eval/results.md
+eval/demo_transcript.json
+
+# Frozen corpus snapshots (scripts/freeze.py) — large, regeneratable, and
+# tied to whatever Atlas cluster produced them; not source.
+data/snapshots/*
+!data/snapshots/.gitkeep

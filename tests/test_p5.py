@@ -180,23 +180,29 @@ async def test_visual_state_gets_multimodal_and_text_embeddings(tmp_path, live_s
         job = (await client.get(f"/api/v1/jobs/{source_id}")).json()
         assert job["stages"]["enrich"]["status"] == "ok", job["stages"].get("enrich")
 
-    db = _db()
-    state = db["evidence_items"].find_one({"source_id": source_id, "evidence_type": "visual_state"})
-    assert state is not None
+    try:
+        db = _db()
+        state = db["evidence_items"].find_one({"source_id": source_id, "evidence_type": "visual_state"})
+        assert state is not None
 
-    mm = state["embeddings"]["multimodal"]
-    assert mm is not None and mm["model"] == get_settings().embed_mm
-    assert len(mm["vector"]) == mm["dim"] > 0
+        mm = state["embeddings"]["multimodal"]
+        assert mm is not None and mm["model"] == get_settings().embed_mm
+        assert len(mm["vector"]) == mm["dim"] > 0
 
-    text = state["embeddings"]["text"]
-    assert text is not None and text["model"] == get_settings().embed_text
-    assert len(text["vector"]) == text["dim"] > 0
-
-    _cleanup(source_id)
+        text = state["embeddings"]["text"]
+        assert text is not None and text["model"] == get_settings().embed_text
+        assert len(text["vector"]) == text["dim"] > 0
+    finally:
+        # Unguarded before: an assertion failure above (e.g. Voyage's 3
+        # RPM cap without a payment method throttling the embed call mid-
+        # stage) skipped this line entirely, leaking the source and its
+        # evidence into the shared collection_id — confirmed as the actual
+        # cause of unrelated cross-contamination in another test file.
+        _cleanup(source_id)
 
 
 @skip_unless_embeddings
-async def test_text_vector_search_finds_relevant_speech_segment(tmp_path, live_server_url):
+async def test_text_vector_search_finds_relevant_speech_segment(tmp_path, live_server_url, server_loop):
     wav_path = tmp_path / "speech.wav"
     subprocess.run(
         ["espeak", "We propose a Redis cache between the API and the database to cut load.",
@@ -212,15 +218,25 @@ async def test_text_vector_search_finds_relevant_speech_segment(tmp_path, live_s
         job = (await client.get(f"/api/v1/jobs/{source_id}")).json()
         assert job["stages"]["enrich"]["status"] == "ok", job["stages"].get("enrich")
 
-    from enrich.embed import get_embedding_provider
+    try:
+        from enrich.embed import get_embedding_provider
 
-    provider = get_embedding_provider()
-    query_vector = provider.embed_text(["how did they reduce load on the database"])[0]
+        provider = get_embedding_provider()
+        query_vector = provider.embed_text(["how did they reduce load on the database"])[0]
 
-    index = NumpyVectorIndex()
-    results = await index.query(
-        query_vector, path="embeddings.text.vector", top_k=5, node_type="semantic_segment", collection_id=get_settings().collection_id,
-    )
-    assert any(r["source_id"] == source_id for r in results), "the relevant speech segment must be in the top 5"
-
-    _cleanup(source_id)
+        # index.query() touches Motor directly (not via HTTP) — must run on
+        # the live server's own event loop, same cross-loop trap every other
+        # direct-async-call test in this suite routes around (tests/conftest.py).
+        index = NumpyVectorIndex()
+        results = await run_on_server_loop(
+            server_loop,
+            index.query(
+                query_vector, path="embeddings.text.vector", top_k=5,
+                node_type="semantic_segment", collection_id=get_settings().collection_id,
+            ),
+        )
+        assert any(r["source_id"] == source_id for r in results), "the relevant speech segment must be in the top 5"
+    finally:
+        # Unguarded before: an assertion failure above skipped this line
+        # entirely, leaking the source into the shared collection_id.
+        _cleanup(source_id)
