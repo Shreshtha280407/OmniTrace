@@ -79,11 +79,11 @@ async def test_pdf_upload_probes_correct_page_count(live_server_url):
         body = resp.json()
         source_id = body["source_id"]
         assert body["job_id"] == source_id
-        # "ready", not "probed" — probing is currently the only stage
-        # implemented for documents (P4 hasn't landed), so once it succeeds
-        # there's nothing left pending. See REQUIRED_STAGES in
-        # pipeline/runner.py.
-        assert body["status"] == "ready"
+        # "ready" once both probe and document (P4) succeed — see
+        # REQUIRED_STAGES in pipeline/runner.py. These pages are blank (no
+        # text, no images), so the document stage takes the scanned/OCR-
+        # fallback path; that's fine here, it's still expected to complete.
+        assert body["status"] == "ready", f"expected ready, got {body['status']!r}"
 
         source = (await client.get(f"/api/v1/sources/{source_id}")).json()
         assert source["page_count"] == 3
@@ -92,6 +92,7 @@ async def test_pdf_upload_probes_correct_page_count(live_server_url):
 
         job = (await client.get(f"/api/v1/jobs/{source_id}")).json()
         assert job["stages"]["probe"]["status"] == "ok"
+        assert job["stages"]["document"]["status"] == "ok"
 
     _cleanup(source_id)
 

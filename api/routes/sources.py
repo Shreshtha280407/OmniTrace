@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from omnitrace.assets import get_asset_store
 from omnitrace.config import get_settings
-from omnitrace.db import PROCESSING_RUNS, SOURCES, coll
+from omnitrace.db import EVIDENCE_ITEMS, PROCESSING_RUNS, SOURCES, coll
 from omnitrace.ids import new_id, sha256_file
 from omnitrace.models import Source
 from pipeline.runner import run_extraction_stages, run_probe_stage
@@ -126,6 +126,23 @@ async def get_source(source_id: str) -> dict:
     if doc is None:
         raise HTTPException(404, "source not found")
     return Source.model_validate(doc).model_dump(by_alias=True, mode="json")
+
+
+@router.get("/sources/{source_id}/evidence")
+async def get_source_evidence(source_id: str, limit: int = 500) -> dict:
+    """§12 API surface, P5. Every evidence_item derived from this source —
+    atomic observations and semantic segments alike, across whichever
+    stages have run. Embedding vectors are stripped from the listing: large
+    and not useful to read directly (P7's query endpoint is where a vector
+    actually gets used, not displayed)."""
+    source_doc = await coll(SOURCES).find_one({"_id": source_id}, {"_id": 1})
+    if source_doc is None:
+        raise HTTPException(404, "source not found")
+
+    items = await coll(EVIDENCE_ITEMS).find({"source_id": source_id}).to_list(length=limit)
+    for item in items:
+        item.pop("embeddings", None)
+    return {"source_id": source_id, "count": len(items), "evidence": items}
 
 
 @router.get("/jobs/{job_id}")

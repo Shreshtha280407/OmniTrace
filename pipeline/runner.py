@@ -28,13 +28,13 @@ from pipeline.probe import ProbeError, probe
 # media_type is considered fully "ready". Only lists stages that actually
 # exist yet — listing a stage before it's implemented would strand every
 # source of that media_type at "partial_ready" forever (no ProcessingRun
-# will ever appear for a stage nothing runs). Extend as P4 (document route)
-# lands: "document": ["probe", "document"].
+# will ever appear for a stage nothing runs). "enrich" (P5) runs after
+# extraction for every modality — see run_extraction_stages.
 REQUIRED_STAGES: dict[str, list[str]] = {
-    "audio": ["probe", "audio"],
-    "video": ["probe", "audio", "visual"],
-    "image": ["probe", "visual"],
-    "document": ["probe"],
+    "audio": ["probe", "audio", "enrich"],
+    "video": ["probe", "audio", "visual", "enrich"],
+    "image": ["probe", "visual", "enrich"],
+    "document": ["probe", "document", "enrich"],
 }
 
 
@@ -228,8 +228,10 @@ async def run_extraction_stages(source_id: str) -> None:
     stages not yet implemented (document -> P4) are silently absent from
     the dispatch table and simply don't run.
     """
-    from pipeline.audio import run_audio_stage  # local import: avoids a
-    from pipeline.visual import run_visual_stage  # circular import at module load time
+    from enrich.embed import run_enrich_stage  # local imports: avoid a
+    from pipeline.audio import run_audio_stage  # circular import at module load time
+    from pipeline.document import run_document_stage
+    from pipeline.visual import run_visual_stage
 
     source_doc = await coll(SOURCES).find_one({"_id": source_id})
     if source_doc is None or source_doc["status"] != "probed":
@@ -240,5 +242,12 @@ async def run_extraction_stages(source_id: str) -> None:
         await run_audio_stage(source_id)
     if media_type in ("video", "image"):
         await run_visual_stage(source_id)
+    if media_type == "document":
+        await run_document_stage(source_id)
+
+    # Enrichment (P5) runs after extraction, regardless of modality — it
+    # only needs evidence_items to already exist, which every modality's
+    # extraction stage(s) above just produced.
+    await run_enrich_stage(source_id)
 
     await recompute_source_status(source_id)
