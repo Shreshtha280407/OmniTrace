@@ -4,10 +4,11 @@ Acceptance: across all eval queries, zero cited IDs outside the bundle,
 zero locators not present in the database; an absent-metric query returns
 missing_information rather than a fabricated number.
 
-Most of this is testable without ANTHROPIC_API_KEY: the validators are
-pure functions, and generate_grounded_answer's empty-evidence short-circuit
+Most of this is testable without GROQ_API_KEY: the validators are pure
+functions, and generate_grounded_answer's empty-evidence short-circuit
 never calls the model at all. Only the full live-model round trip needs a
-real key.
+real key. (Generation runs through Groq, not Anthropic — see
+generate/answer.py's module docstring for why.)
 """
 
 from __future__ import annotations
@@ -26,11 +27,11 @@ from generate.validate import (
 from omnitrace.config import get_settings
 
 
-def _has_anthropic_key() -> bool:
-    return bool(get_settings().anthropic_api_key)
+def _has_groq_key() -> bool:
+    return bool(get_settings().groq_api_key)
 
 
-skip_unless_anthropic = pytest.mark.skipif(not _has_anthropic_key(), reason="ANTHROPIC_API_KEY not set")
+skip_unless_groq = pytest.mark.skipif(not _has_groq_key(), reason="GROQ_API_KEY not set")
 
 
 # ── pure-function tests: no network ─────────────────────────────────────────
@@ -104,7 +105,7 @@ def test_generate_grounded_answer_short_circuits_on_empty_evidence():
 # ── live model round trip ───────────────────────────────────────────────────
 
 
-@skip_unless_anthropic
+@skip_unless_groq
 def test_live_generation_never_cites_outside_the_bundle():
     evidence = [
         {
@@ -122,7 +123,7 @@ def test_live_generation_never_cites_outside_the_bundle():
         assert locator["id"] in allowed_ids
 
 
-@skip_unless_anthropic
+@skip_unless_groq
 def test_live_generation_reports_missing_information_for_absent_metric():
     evidence = [
         {

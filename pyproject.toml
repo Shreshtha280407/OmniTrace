@@ -21,8 +21,9 @@ dependencies = [
   "imagehash>=4.3",
   "numpy>=2.0",
   "voyageai>=0.3",   # P5 — text + multimodal embeddings
-  "pyyaml>=6.0",      # P6 — scripts/calibrate.py's eval/gold.yaml
-  "anthropic>=0.40",  # P8 — grounded generation (Claude Opus 5, Structured Outputs)
+  "pyyaml>=6.0",      # P6 — scripts/calibrate.py's eval/gold.yaml; P9 — eval/gold.yaml
+  # P8 grounded generation runs through omnitrace/llm.py's raw-HTTP Groq
+  # client (no provider SDK needed) — see that module's docstring for why.
 ]
 
 [project.optional-dependencies]

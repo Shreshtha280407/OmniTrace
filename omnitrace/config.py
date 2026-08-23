@@ -24,19 +24,18 @@ class Settings(BaseSettings):
     mongodb_db: str = Field(default="omnitrace", alias="MONGODB_DB")
     collection_id: str = Field(default="demo_architecture", alias="COLLECTION_ID")
 
-    # ASR + vision provider — Groq's OpenAI-compatible API for now. Swappable
-    # to OpenAI (or anything else OpenAI-shaped) by changing these four
-    # fields; omnitrace/llm.py talks to whatever LLM_BASE_URL points at.
+    # ASR + vision + generation provider — Groq's OpenAI-compatible API for
+    # everything, including P8's grounded generation (generate/answer.py),
+    # which was originally spec'd against Anthropic but was rerouted here
+    # per explicit direction — no Anthropic key, not now, not later.
+    # Swappable to OpenAI (or anything else OpenAI-shaped) by changing
+    # these fields; omnitrace/llm.py talks to whatever LLM_BASE_URL points at.
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     llm_base_url: str = Field(default="https://api.groq.com/openai/v1", alias="LLM_BASE_URL")
     model_asr: str = Field(default="whisper-large-v3-turbo", alias="MODEL_ASR")
     model_vision: str = Field(default="qwen/qwen3.6-27b", alias="MODEL_VISION")
-
-    # Generation provider — optional at P0/P1, required from P8 onward.
-    # Independent of the ASR/vision provider above.
-    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
-    model_answer: str = Field(default="claude-opus-5", alias="MODEL_ANSWER")
-    model_bulk: str = Field(default="claude-haiku-4-5", alias="MODEL_BULK")
+    model_answer: str = Field(default="openai/gpt-oss-120b", alias="MODEL_ANSWER")
+    model_bulk: str = Field(default="openai/gpt-oss-20b", alias="MODEL_BULK")  # unused so far — reserved for a future cheap-bulk-call path
 
     voyage_api_key: str = Field(default="", alias="VOYAGE_API_KEY")
     embed_text: str = Field(default="voyage-3-large", alias="EMBED_TEXT")

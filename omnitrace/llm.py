@@ -3,9 +3,14 @@
 Currently backed by Groq's OpenAI-compatible API (chat completions + audio
 transcriptions). The stated end state is OpenAI once the rest of the
 project is built — swapping providers means changing LLM_BASE_URL,
-GROQ_API_KEY, and the model IDs in config.py. Nothing in pipeline/ imports
-a provider SDK directly; everything goes through the two functions below,
-written against the request/response shape both providers share.
+GROQ_API_KEY, and the model IDs in config.py. Nothing in pipeline/ or
+generate/ imports a provider SDK directly; everything goes through the
+three functions below, written against the request/response shape both
+providers share. generate/answer.py (P8, grounded generation) was
+originally spec'd against Anthropic's Structured Outputs API but was
+rerouted here per explicit direction — no Anthropic key, not now, not
+later — so chat_json() is the general text-chat sibling of vision_json()
+below, same JSON-mode contract, no image attached.
 """
 
 from __future__ import annotations
@@ -114,3 +119,57 @@ def vision_json(
         return json.loads(content)
     except json.JSONDecodeError as e:
         raise LLMError(f"vision model returned non-JSON content: {e}\n{content[:500]}") from e
+
+
+def chat_json(
+    messages: list[dict[str, Any]],
+    *,
+    model: str,
+    temperature: float = 0.0,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    """Text-only chat call constrained to JSON output — vision_json()'s
+    sibling, same response_format={"type": "json_object"} contract, no
+    image attached. `messages` is passed through verbatim (system/user/...
+    roles, plain string content) so a caller controls its own prompt shape;
+    this function's only job is "call the API correctly and parse the
+    result", same division of responsibility as every other function here.
+
+    json_object mode guarantees syntactically valid JSON, not schema
+    conformance — a caller that needs a specific shape (generate/answer.py
+    does) must describe that shape in its own prompt text and treat the
+    parsed result defensively afterward, same posture generate/validate.py
+    already takes.
+    """
+    settings = get_settings()
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+
+    with httpx.Client(base_url=settings.llm_base_url, headers=_headers(), timeout=120.0) as client:
+        resp = client.post("/chat/completions", json=payload)
+
+    if resp.status_code != 200:
+        raise LLMError(f"chat call failed ({resp.status_code}): {resp.text[:500]}")
+
+    body = resp.json()
+    try:
+        choice = body["choices"][0]
+        content = choice["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise LLMError(f"unexpected response shape, no message content: {body!r}") from e
+
+    if choice.get("finish_reason") == "content_filter":
+        raise LLMError("model declined to answer (finish_reason=content_filter)")
+    if not content:
+        raise LLMError(f"empty response content, finish_reason={choice.get('finish_reason')!r}")
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        raise LLMError(f"model returned non-JSON content: {e}\n{content[:500]}") from e
