@@ -8,7 +8,6 @@ visual_state + OCR regions end to end.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,7 +15,6 @@ import httpx
 import pytest
 from pymongo import MongoClient
 
-from omnitrace.assets import get_asset_store
 from omnitrace.config import get_settings
 from pipeline.visual import _State, _cap_state_count, _merge_into_states
 from tests.conftest import make_test_video
@@ -39,16 +37,10 @@ def _db():
     return MongoClient(s.mongodb_uri)[s.mongodb_db]
 
 
-def _cleanup(source_id: str) -> None:
-    store = get_asset_store()
-    for kind in ("raw", "derived"):
-        d = store.root / kind / source_id
-        if d.exists():
-            shutil.rmtree(d)
-    db = _db()
-    db["sources"].delete_one({"_id": source_id})
-    db["processing_runs"].delete_many({"source_id": source_id})
-    db["evidence_items"].delete_many({"source_id": source_id})
+# cleanup_source (tests/conftest.py) also prunes entities the auto-
+# triggered enrich stage creates from this source's evidence — see its
+# docstring for why that matters beyond just evidence_items/assets.
+from tests.conftest import cleanup_source as _cleanup  # noqa: E402
 
 
 def _draw_text_image(text: str, path: Path, *, bg: str = "white") -> None:

@@ -22,10 +22,10 @@ import numpy as np
 import pytest
 from pymongo import MongoClient
 
-from omnitrace.assets import get_asset_store
 from omnitrace.config import get_settings
 from omnitrace.ids import new_id
 from retrieval.vector_index import NumpyVectorIndex
+from tests.conftest import run_on_server_loop
 
 pytestmark = pytest.mark.asyncio
 
@@ -48,18 +48,10 @@ def _db():
     return MongoClient(s.mongodb_uri)[s.mongodb_db]
 
 
-def _cleanup(source_id: str) -> None:
-    import shutil
-
-    store = get_asset_store()
-    for kind in ("raw", "derived"):
-        d = store.root / kind / source_id
-        if d.exists():
-            shutil.rmtree(d)
-    db = _db()
-    db["sources"].delete_one({"_id": source_id})
-    db["processing_runs"].delete_many({"source_id": source_id})
-    db["evidence_items"].delete_many({"source_id": source_id})
+# cleanup_source (tests/conftest.py) also prunes entities the enrich stage
+# creates from this source's evidence — critical here specifically, since
+# this file's whole point is exercising entity resolution.
+from tests.conftest import cleanup_source as _cleanup  # noqa: E402
 
 
 def _draw_text_image(text: str, path: Path) -> None:
@@ -89,7 +81,7 @@ def _make_pdf_bytes(pages_text: list[str]) -> bytes:
 
 
 @skip_unless_mongo
-async def test_numpy_vector_index_ranks_by_cosine_similarity():
+async def test_numpy_vector_index_ranks_by_cosine_similarity(server_loop):
     """Seed three evidence_items with synthetic 8-dim vectors (small dim is
     fine — the query loop never assumes 1024) at known angles from a query
     vector, and confirm NumpyVectorIndex returns them in similarity order.
@@ -125,7 +117,9 @@ async def test_numpy_vector_index_ranks_by_cosine_similarity():
 
     try:
         index = NumpyVectorIndex()
-        results = await index.query(query, path="embeddings.text.vector", top_k=3)
+        results = await run_on_server_loop(
+            server_loop, index.query(query, path="embeddings.text.vector", top_k=3)
+        )
         ranked_ids = [r["_id"] for r in results]
         assert ranked_ids == ["ev_close", "ev_mid", "ev_far"], f"expected similarity-descending order, got {ranked_ids}"
         assert results[0]["score"] > results[1]["score"] > results[2]["score"]
