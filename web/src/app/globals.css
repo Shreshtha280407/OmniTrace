@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Modality encoding exposed to non-Tailwind consumers (WebGL, canvas,
+       inline SVG) so the graph and the badges can never drift apart. */
+    --modality-speech: #19d6c4;
+    --modality-visual: #4c9be8;
+    --modality-image: #9488dd;
+    --modality-document: #d98e6a;
+    --signal: #19d6c4;
+    --uv: #7a6dc9;
+  }
+
+  * {
+    @apply border-ink-600;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-ink-900 text-ink-100 font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Visible, branded focus. Never remove the ring — only restyle it. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-signal-500/60 ring-offset-2 ring-offset-ink-900;
+  }
+
+  ::selection {
+    background: rgba(25, 214, 196, 0.24);
+    color: #e8ecf2;
+  }
+
+  /* Scrollbars: present, but not furniture. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-ink-500 bg-clip-content;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-400 bg-clip-content;
+  }
+
+  /* Numeric telemetry should never reflow as digits change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* A panel: thin low-contrast border, soft interior highlight, no glow. */
+  .panel {
+    @apply rounded-xl border border-ink-600/80 bg-ink-800/70 shadow-panel backdrop-blur-sm;
+  }
+
+  .hairline {
+    @apply border-ink-600/70;
+  }
+
+  /* Editorial eyebrow used across marketing sections. */
+  .eyebrow {
+    @apply font-mono text-ui-2xs uppercase tracking-[0.18em] text-ink-300;
+  }
+
+  /* Technical text: IDs, checksums, timestamps, model versions. */
+  .telemetry {
+    @apply font-mono text-ui-2xs tabular text-ink-300;
+  }
+
+  /* Grain overlay for the cinematic surfaces. Extremely low opacity —
+     it should be felt, not seen. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.028;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Hairline grid used behind hero and graph surfaces. */
+  .grid-field {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-ink-700/60;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.045),
+      transparent
+    );
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  /* Fades the bottom of a scroll container instead of hard-cutting it. */
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent 100%);
+  }
+}
+
+/* Motion contract: every animation in this app communicates a state change,
+   so under reduced-motion we collapse duration rather than removing the
+   change itself. WebGL scenes check the same query and render a static frame. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
