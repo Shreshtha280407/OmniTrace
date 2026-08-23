@@ -20,13 +20,12 @@ dependencies = [
   "pillow>=11.0",
   "imagehash>=4.3",
   "numpy>=2.0",
+  "voyageai>=0.3",   # P5 — text + multimodal embeddings
+  "pyyaml>=6.0",      # P6 — scripts/calibrate.py's eval/gold.yaml
+  "anthropic>=0.40",  # P8 — grounded generation (Claude Opus 5, Structured Outputs)
 ]
 
 [project.optional-dependencies]
-# added in later phases — not required yet
-enrich = [
-  "voyageai>=0.3",  # P5 embeddings, if that phase stays on Voyage
-]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 
 [tool.uv]

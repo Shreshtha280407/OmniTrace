@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import sources
+from api.routes import events, query, sources
 from omnitrace.db import close_client, ensure_indexes
 
 
@@ -34,6 +34,8 @@ app.add_middleware(
 )
 
 app.include_router(sources.router, prefix="/api/v1")
+app.include_router(events.router, prefix="/api/v1")
+app.include_router(query.router, prefix="/api/v1")
 
 
 @app.get("/health")

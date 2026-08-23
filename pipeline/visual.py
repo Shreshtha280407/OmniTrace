@@ -182,6 +182,113 @@ def _cap_state_count(states: list[_State], cap: int) -> list[_State]:
     return merged
 
 
+def process_single_image(
+    image_path: Path,
+    *,
+    collection_id: str,
+    source_id: str,
+    run_id: str,
+    modality: str,
+    image_storage_path: str,
+    run_id_producer_suffix: str = "",
+    location_extra: dict[str, Any] | None = None,
+) -> list[EvidenceItem]:
+    """One image in, one visual_state + its OCR regions + diagram facts out.
+    Synchronous (run it via asyncio.to_thread from an async caller) — this is
+    the P4 (§07) reuse point: "embedded images and scanned pages are routed
+    through the same visual processor as P3". run_visual_stage's own
+    time-located state loop is left untouched (it predates this function and
+    is already covered by P3's acceptance tests) — this is the page-located
+    sibling for document.py's two entry points (scanned page, embedded image).
+
+    location_extra carries whatever Location fields the caller already knows
+    (page, timeline_id=None for documents) plus, only for an embedded image,
+    a `bbox_norm` giving the embed rect's position on the page. When present,
+    that single bbox is applied to every item this call produces — OCR-line
+    boxes found *inside* a small embedded sub-image are in that sub-image's
+    own pixel space, and re-projecting them onto the page would need an
+    affine transform this build doesn't compute (P4 cut-line territory); the
+    embed rect is still a correct, if coarser, locator.
+    """
+    settings = get_settings()
+    location_extra = location_extra or {}
+    timeline_id = location_extra.get("timeline_id")
+    page = location_extra.get("page")
+    override_bbox = location_extra.get("bbox_norm")
+    suffix = f"_{run_id_producer_suffix}" if run_id_producer_suffix else ""
+
+    img = Image.open(image_path)
+    ocr_lines = _ocr_lines(img)
+
+    try:
+        vision_result = vision_json(image_path, prompt=VISION_PROMPT, model=settings.model_vision)
+    except LLMError:
+        vision_result = {"visual_type": "unknown", "summary": "", "diagram_facts": []}
+
+    visual_type = vision_result.get("visual_type", "unknown")
+    summary = vision_result.get("summary", "")
+    state_location = Location(timeline_id=timeline_id, page=page, bbox_norm=override_bbox)
+
+    state_id = new_id("evidence_item")
+    items: list[EvidenceItem] = [
+        EvidenceItem(
+            _id=state_id,
+            collection_id=collection_id,
+            source_id=source_id,
+            node_type="atomic_observation",
+            evidence_type="visual_state",
+            modality=modality,
+            content=f"[{visual_type}] {summary}".strip(),
+            location=state_location,
+            provenance=Provenance(
+                processing_run_id=run_id, producer=f"groq_vision_adapter{suffix}",
+                model_version=settings.model_vision, derived_from=[image_storage_path],
+            ),
+        )
+    ]
+
+    for line in ocr_lines:
+        items.append(
+            EvidenceItem(
+                _id=new_id("evidence_item"),
+                collection_id=collection_id,
+                source_id=source_id,
+                parent_evidence_id=state_id,
+                node_type="atomic_observation",
+                evidence_type="ocr_region",
+                modality=modality,
+                content=line["text"],
+                location=Location(timeline_id=timeline_id, page=page, bbox_norm=override_bbox or line["bbox_norm"]),
+                confidence=ExtractionConfidence(extraction=line["confidence"]),
+                provenance=Provenance(processing_run_id=run_id, producer=f"pytesseract_adapter{suffix}"),
+            )
+        )
+
+    for fact in vision_result.get("diagram_facts", []):
+        subject, relation, obj = fact.get("subject"), fact.get("relation"), fact.get("object")
+        if not (subject and relation and obj):
+            continue
+        items.append(
+            EvidenceItem(
+                _id=new_id("evidence_item"),
+                collection_id=collection_id,
+                source_id=source_id,
+                parent_evidence_id=state_id,
+                node_type="atomic_observation",
+                evidence_type="diagram_fact",
+                modality=modality,
+                content=f"{subject} {relation} {obj}",
+                location=state_location,
+                provenance=Provenance(
+                    processing_run_id=run_id, producer=f"groq_vision_adapter{suffix}",
+                    model_version=settings.model_vision,
+                ),
+            )
+        )
+
+    return items
+
+
 async def run_visual_stage(source_id: str) -> None:
     async def body(source_doc: dict, run_id: str) -> ProcessorResult:
         settings = get_settings()
@@ -195,7 +302,11 @@ async def run_visual_stage(source_id: str) -> None:
 
         if media_type == "image":
             timeline_id = None
-            states_input: list[tuple[Path, float | None, float | None]] = [(raw_path, None, None)]
+            # derived_from records the raw source itself here — a standalone
+            # image has no separate derived frame asset, unlike a video state.
+            states_input: list[tuple[Path, float | None, float | None, str]] = [
+                (raw_path, None, None, source_doc["storage_path"])
+            ]
         else:
             timeline_id = await ensure_timeline_id(source_id)
             duration_s = (source_doc.get("duration_ms") or 0) / 1000.0
@@ -215,9 +326,9 @@ async def run_visual_stage(source_id: str) -> None:
                     persisted = store.put_file(
                         str(st.frame_path), source_id=source_id, kind="derived", filename=f"visual_state_{i:03d}.png"
                     )
-                    states_input.append((store.resolve(persisted), st.start_s, st.end_s))
+                    states_input.append((store.resolve(persisted), st.start_s, st.end_s, persisted))
 
-        for i, (frame_path, start_s, end_s) in enumerate(states_input):
+        for i, (frame_path, start_s, end_s, frame_storage_path) in enumerate(states_input):
             img = Image.open(frame_path)
             ocr_lines = await asyncio.to_thread(_ocr_lines, img)
 
@@ -251,6 +362,7 @@ async def run_visual_stage(source_id: str) -> None:
                     location=location,
                     provenance=Provenance(
                         processing_run_id=run_id, producer="groq_vision_adapter", model_version=settings.model_vision,
+                        derived_from=[frame_storage_path],
                     ),
                 )
             )
