@@ -87,13 +87,31 @@ async def structured_channel(plan: QueryPlan, *, collection_id: str, top_k: int 
     return docs[:top_k]
 
 
-async def run_all_channels(plan: QueryPlan, *, collection_id: str, top_k: int = 20) -> dict[str, list[dict[str, Any]]]:
+async def run_all_channels(
+    plan: QueryPlan, *, collection_id: str, top_k: int = 20, disabled_channels: set[str] | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """disabled_channels is the P9 A2 ablation hook ("no multimodal vector
+    channel") — None (the default) runs all four channels exactly as
+    before. Passing {"visual_vector"} answers "what does retrieval lose
+    without the multimodal embedding channel" without a second, duplicated
+    orchestration path in eval code."""
     import asyncio
 
+    disabled_channels = disabled_channels or set()
+
+    async def _maybe(name: str, make_coro):
+        # make_coro is a thunk, not a coroutine object — calling
+        # lexical_channel(...) etc. eagerly, then conditionally skipping the
+        # await, would still schedule the DB call and leave the resulting
+        # coroutine object unawaited (a real RuntimeWarning + wasted query).
+        if name in disabled_channels:
+            return []
+        return await make_coro()
+
     lexical, text_vec, visual_vec, structured = await asyncio.gather(
-        lexical_channel(plan.question, collection_id=collection_id, top_k=top_k),
-        text_vector_channel(plan.question, collection_id=collection_id, top_k=top_k),
-        visual_vector_channel(plan.question, collection_id=collection_id, top_k=top_k),
-        structured_channel(plan, collection_id=collection_id, top_k=top_k),
+        _maybe("lexical", lambda: lexical_channel(plan.question, collection_id=collection_id, top_k=top_k)),
+        _maybe("text_vector", lambda: text_vector_channel(plan.question, collection_id=collection_id, top_k=top_k)),
+        _maybe("visual_vector", lambda: visual_vector_channel(plan.question, collection_id=collection_id, top_k=top_k)),
+        _maybe("structured", lambda: structured_channel(plan, collection_id=collection_id, top_k=top_k)),
     )
     return {"lexical": lexical, "text_vector": text_vec, "visual_vector": visual_vec, "structured": structured}

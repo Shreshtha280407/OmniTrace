@@ -41,22 +41,12 @@ def _db():
     return MongoClient(s.mongodb_uri)[s.mongodb_db]
 
 
-def _cleanup(source_id: str) -> None:
-    import shutil
-
-    store = get_asset_store()
-    # Remove both raw and derived assets — a video source (P1's own video
-    # test included) now produces derived files too (extracted WAV, visual
-    # state frames) once P2/P3 auto-trigger on upload, not just the raw
-    # upload P1 originally had to worry about.
-    for kind in ("raw", "derived"):
-        d = store.root / kind / source_id
-        if d.exists():
-            shutil.rmtree(d)
-    db = _db()
-    db["sources"].delete_one({"_id": source_id})
-    db["processing_runs"].delete_many({"source_id": source_id})
-    db["evidence_items"].delete_many({"source_id": source_id})
+# A video source (P1's own video test included) now cascades through P2-P5
+# on upload — extracted WAV, visual state frames, and (P5) entities all get
+# produced from just an upload. cleanup_source (tests/conftest.py) handles
+# all of that, including pruning entities that existed only for this
+# source — not just the raw file P1 originally had to worry about.
+from tests.conftest import cleanup_source as _cleanup  # noqa: E402
 
 
 def _make_pdf_bytes(pages: int) -> bytes:

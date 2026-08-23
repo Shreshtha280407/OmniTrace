@@ -177,7 +177,6 @@ async def run_document_stage(source_id: str) -> None:
 
                 # Native text path — atomic blocks, then merge into sections.
                 block_ids: list[str] = []
-                block_by_id: dict[str, EvidenceItem] = {}
                 for i, b in enumerate(blocks):
                     block_id = new_id("evidence_item")
                     item = EvidenceItem(
@@ -195,7 +194,6 @@ async def run_document_stage(source_id: str) -> None:
                         provenance=Provenance(processing_run_id=run_id, producer="pymupdf_native"),
                     )
                     block_ids.append(block_id)
-                    block_by_id[block_id] = item
                     evidence_items.append(item)
 
                 idx = 0

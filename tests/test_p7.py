@@ -26,6 +26,7 @@ from omnitrace.config import get_settings
 from retrieval.fuse import fuse
 from retrieval.planner import _ARCHITECTURE_RE, _TRADEOFF_RE, _WHERE_SHOWN_RE, _WHO_RE, plan_query
 from retrieval.rerank import rerank_bundle
+from tests.conftest import run_on_server_loop
 
 pytestmark_async = pytest.mark.asyncio
 
@@ -104,7 +105,7 @@ def test_rerank_breaks_near_ties_toward_new_modality_coverage():
 
 @pytest.mark.asyncio
 @skip_unless_mongo
-async def test_planner_matches_entities_by_exact_normalized_key():
+async def test_planner_matches_entities_by_exact_normalized_key(server_loop):
     from omnitrace.db import ENTITIES, coll
     from omnitrace.ids import new_id
 
@@ -119,7 +120,9 @@ async def test_planner_matches_entities_by_exact_normalized_key():
         from enrich.entities import normalize_key
         # Query text must normalize to the exact same key we just inserted.
         assert normalize_key("PostgreSQL") != ""
-        plan = await plan_query(f"Who chose entity-{entity_id[-6:]} for the database?")
+        plan = await run_on_server_loop(
+            server_loop, plan_query(f"Who chose entity-{entity_id[-6:]} for the database?")
+        )
         assert plan.answer_slots  # "who" must have fired regardless of entity match
     finally:
         db["entities"].delete_one({"_id": entity_id})

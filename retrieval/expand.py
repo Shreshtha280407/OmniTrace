@@ -18,7 +18,16 @@ MAX_HOPS = 2
 MAX_EXPANDED_PER_HOP = 50
 
 
-async def expand(seed_ids: list[str], *, collection_id: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+async def expand(
+    seed_ids: list[str], *, collection_id: str, exclude_edge_types: set[str] | None = None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """exclude_edge_types is the P9 A1 ablation hook ("no temporal edges") —
+    None (the default, and the only mode any pre-P9 caller uses) traverses
+    every confirmed edge type exactly as before. Passing
+    {"TEMPORALLY_OVERLAPS"} answers "what does expansion lose without the
+    timeline guard's own edge type" without duplicating this function's
+    traversal logic in eval code."""
+    exclude_edge_types = exclude_edge_types or set()
     events = await coll(SEMANTIC_EVENTS).find(
         {"collection_id": collection_id, "member_ids": {"$in": seed_ids}}
     ).to_list(length=None)
@@ -47,6 +56,8 @@ async def expand(seed_ids: list[str], *, collection_id: str) -> tuple[list[dict[
 
         next_frontier: set[str] = set()
         for edge in edges:
+            if edge["type"] in exclude_edge_types:
+                continue
             for a, b in ((edge["from_id"], edge["to_id"]), (edge["to_id"], edge["from_id"])):
                 if a in frontier and b not in visited:
                     next_frontier.add(b)

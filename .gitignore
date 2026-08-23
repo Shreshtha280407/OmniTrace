@@ -11,3 +11,16 @@ data/assets/*
 !data/assets/.gitkeep
 *.egg-info/
 .DS_Store
+
+# Generated eval/calibration output (scripts/calibrate.py, eval/run.py) —
+# not source. eval/gold.yaml is the hand-authored input and stays tracked.
+eval/candidates.csv
+eval/threshold_sweep.json
+eval/results.json
+eval/results.md
+eval/demo_transcript.json
+
+# Frozen corpus snapshots (scripts/freeze.py) — large, regeneratable, and
+# tied to whatever Atlas cluster produced them; not source.
+data/snapshots/*
+!data/snapshots/.gitkeep

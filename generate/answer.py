@@ -1,13 +1,16 @@
 """Grounded answer generation — architecture doc §04/§08/§09 P8.
 
-Claude Opus 5, Structured Outputs via output_config (never assistant-turn
-prefill — that returns 400 on this model family, a hard error not a
-degradation), prompt caching on the fixed system prompt (cache_control:
-ephemeral), thinking on by default with max_tokens >= 8000 so it isn't
-truncated mid-citation. stop_reason is checked before content is touched:
-a safety classifier can return HTTP 200 with an empty content array on
-refusal, and code that reads content[0] unconditionally crashes on exactly
-that response (§04 call-pattern rule).
+Originally spec'd against Claude Opus 5's Structured Outputs API; rerouted
+to Groq's OpenAI-compatible chat completions — the same provider P2's ASR
+and P3/P4's vision calls already use — per explicit direction: no
+Anthropic key, not now, not later. omnitrace/llm.py's chat_json() carries
+the json_object contract vision_json() already proved reliable in P3, but
+json_object mode only guarantees syntactically valid JSON, not schema
+conformance the way Anthropic's output_config could — so the schema is
+spelled out in the system prompt, and the five validators in
+generate/validate.py matter even more here: they were already written to
+repair a malformed response rather than trust the provider, which is
+exactly the posture this call now needs.
 """
 
 from __future__ import annotations
@@ -18,9 +21,15 @@ from typing import Any
 from generate.prompt import RESPONSE_SCHEMA, SYSTEM_PROMPT, build_user_message
 from generate.validate import run_validators, validate_bundle_membership
 from omnitrace.config import get_settings
+from omnitrace.llm import LLMError, chat_json
 
-GENERATION_EFFORT = "high"
-MAX_TOKENS = 8000
+# 8000 was Anthropic's own "thinking mode isn't truncated mid-citation"
+# minimum from the original spec — irrelevant now. Groq's free/on-demand
+# tier caps openai/gpt-oss-120b at 8000 tokens PER MINUTE total (prompt +
+# reserved completion budget), so requesting an 8000-token completion
+# budget alone blew the cap before a single prompt token was even counted.
+# A JSON answer with a handful of claims fits comfortably well under 2000.
+MAX_TOKENS = 2000
 
 
 class GenerationError(Exception):
@@ -28,37 +37,36 @@ class GenerationError(Exception):
     the required JSON shape."""
 
 
-def _client():
-    import anthropic
-
-    return anthropic.Anthropic(api_key=get_settings().anthropic_api_key)
+def _system_prompt_with_schema() -> str:
+    return (
+        SYSTEM_PROMPT
+        + "\n\nRespond with a single JSON object and nothing else — no markdown "
+        "fences, no commentary before or after it — matching exactly this JSON "
+        "Schema:\n"
+        + json.dumps(RESPONSE_SCHEMA)
+    )
 
 
 def _call_model(question: str, evidence: list[dict[str, Any]]) -> dict[str, Any]:
     settings = get_settings()
-    resp = _client().messages.create(
-        model=settings.model_answer,
-        max_tokens=MAX_TOKENS,
-        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": build_user_message(question, evidence)}],
-        output_config={"effort": GENERATION_EFFORT, "format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
-    )
-
-    # Check stop_reason BEFORE touching content — a refusal can return a
-    # successful HTTP response with an empty content array (§04).
-    if resp.stop_reason == "refusal":
-        raise GenerationError("model declined to answer (stop_reason=refusal)")
-    if not resp.content:
-        raise GenerationError(f"empty response content, stop_reason={resp.stop_reason!r}")
-
-    text_block = next((b for b in resp.content if getattr(b, "type", None) == "text"), None)
-    if text_block is None:
-        raise GenerationError(f"no text content in response, stop_reason={resp.stop_reason!r}")
+    if not settings.groq_api_key:
+        # Fail fast with the same graceful-degradation contract every other
+        # provider-backed stage honors (see enrich/embed.py, pipeline/visual.py)
+        # rather than letting the HTTP call raise an opaque auth error below.
+        raise GenerationError("GROQ_API_KEY not configured")
 
     try:
-        return json.loads(text_block.text)
-    except json.JSONDecodeError as e:
-        raise GenerationError(f"response did not parse as JSON despite output_config: {e}") from e
+        return chat_json(
+            [
+                {"role": "system", "content": _system_prompt_with_schema()},
+                {"role": "user", "content": build_user_message(question, evidence)},
+            ],
+            model=settings.model_answer,
+            temperature=0.0,
+            max_tokens=MAX_TOKENS,
+        )
+    except LLMError as e:  # noqa: BLE001 — same degrade-not-raise contract as every other real network call here
+        raise GenerationError(f"Groq generation call failed: {e}") from e
 
 
 def generate_grounded_answer(question: str, evidence: list[dict[str, Any]]) -> dict[str, Any]:

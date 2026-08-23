@@ -46,7 +46,13 @@ def rerank_bundle(
     plan: QueryPlan,
     edge_confidence_by_id: dict[str, float] | None = None,
     top_k: int = 20,
+    coverage_aware: bool = True,
 ) -> list[dict[str, Any]]:
+    """coverage_aware=False is the P9 A3 ablation hook ("no coverage-aware
+    rerank") — zeroes the slot_coverage/modality_coverage terms so
+    selection degrades to fused-rank-plus-quality only, the same greedy
+    loop otherwise. True (the default, and the only mode any pre-P9 caller
+    uses) is the full §08 formula, unchanged."""
     edge_confidence_by_id = edge_confidence_by_id or {}
     required_slot_modalities: set[str] = set()
     for slot in plan.answer_slots:
@@ -75,8 +81,8 @@ def rerank_bundle(
             utility = (
                 WEIGHTS["fused_rank"] * fused_rank_term
                 + WEIGHTS["edge_confidence"] * edge_conf
-                + WEIGHTS["slot_coverage"] * (1.0 if adds_slot else 0.0)
-                + WEIGHTS["modality_coverage"] * (1.0 if adds_modality else 0.0)
+                + (WEIGHTS["slot_coverage"] * (1.0 if adds_slot else 0.0) if coverage_aware else 0.0)
+                + (WEIGHTS["modality_coverage"] * (1.0 if adds_modality else 0.0) if coverage_aware else 0.0)
                 + WEIGHTS["extraction_quality"] * extraction_quality
                 + WEIGHTS["provenance_completeness"] * _provenance_completeness(item)
             )

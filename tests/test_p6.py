@@ -23,6 +23,7 @@ from link.score import classify, score_candidate
 from omnitrace.config import get_settings
 from omnitrace.ids import new_id
 from scripts.link import run_linker
+from tests.conftest import run_on_server_loop
 
 
 def _mongo_configured() -> bool:
@@ -80,7 +81,7 @@ def test_classify_respects_configured_thresholds():
 
 @pytest.mark.asyncio
 @skip_unless_mongo
-async def test_same_timeline_candidates_never_cross_timelines():
+async def test_same_timeline_candidates_never_cross_timelines(server_loop):
     collection_id = "test_p6_" + new_id("source")[-8:]
     db = _db()
     tl_a, tl_b = new_id("timeline"), new_id("timeline")
@@ -96,7 +97,7 @@ async def test_same_timeline_candidates_never_cross_timelines():
     ]
     db["evidence_items"].insert_many(docs)
     try:
-        candidates = await generate_same_timeline_candidates(collection_id)
+        candidates = await run_on_server_loop(server_loop, generate_same_timeline_candidates(collection_id))
         assert candidates == [], "identical absolute timestamps on different timelines must never form a candidate"
     finally:
         db["evidence_items"].delete_many({"collection_id": collection_id})
@@ -104,7 +105,7 @@ async def test_same_timeline_candidates_never_cross_timelines():
 
 @pytest.mark.asyncio
 @skip_unless_mongo
-async def test_explains_edge_confirmed_with_signal_breakdown():
+async def test_explains_edge_confirmed_with_signal_breakdown(server_loop):
     collection_id = "test_p6_" + new_id("source")[-8:]
     db = _db()
     timeline_id = new_id("timeline")
@@ -132,7 +133,7 @@ async def test_explains_edge_confirmed_with_signal_breakdown():
     ])
 
     try:
-        metrics = await run_linker(collection_id)
+        metrics = await run_on_server_loop(server_loop, run_linker(collection_id))
         assert metrics["confirmed"] >= 1, f"expected at least one confirmed edge, got {metrics}"
 
         edge = db["relationships"].find_one({
