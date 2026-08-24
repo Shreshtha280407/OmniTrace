@@ -78,11 +78,7 @@ def generate_grounded_answer(question: str, evidence: list[dict[str, Any]]) -> d
     evidence_by_id = {e["_id"]: e for e in evidence}
 
     if not evidence:
-        return {
-            "answer": "", "claims": [], "conflicts": [],
-            "missing_information": ["no evidence retrieved for this question"],
-            "source_locators": [], "support_label": "none", "validator_warnings": [],
-        }
+        return generate_general_answer(question)
 
     response = _call_model(question, evidence)
 
@@ -124,3 +120,89 @@ def _overall_support(response: dict[str, Any]) -> str:
     if any(label == "low" for label in labels):
         return "low"
     return "medium"
+
+
+# ── ungrounded fallback ────────────────────────────────────────────────────
+
+GENERAL_SYSTEM_PROMPT = (
+    "You are OmniTrace answering a question for which no source material has "
+    "been provided. Answer directly and helpfully from general knowledge, the "
+    "way a capable assistant would.\n\n"
+    "You have NO evidence for this answer. Therefore:\n"
+    "- Do not invent citations, timestamps, page numbers, filenames, or "
+    "speaker names.\n"
+    "- Do not claim that anything was said, shown, or written in a source.\n"
+    "- If the question asks about specific content the user has not supplied "
+    "(\"what did the video say\", \"summarise my document\"), say plainly that "
+    "no source has been added yet, and invite them to add one.\n"
+    "- If the question is answerable from general knowledge, just answer it."
+)
+
+GENERAL_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+}
+
+
+def generate_general_answer(question: str) -> dict[str, Any]:
+    """Answer with no evidence at all, from the model's general knowledge.
+
+    This is the path taken when the collection is empty or retrieval returned
+    nothing. It exists because a conversation with no sources yet is a normal
+    state, not an error: returning a blank answer and "no evidence retrieved"
+    made the product look broken the first time anyone typed into it.
+
+    The grounding guarantee is not weakened by this, because it is not the
+    same guarantee. An answer built from a bundle still may cite only IDs in
+    that bundle and still reports its gaps. This answer carries
+    support_label="ungrounded" and an empty source_locators list, so it is
+    distinguishable from a grounded one everywhere downstream — a caller can
+    never mistake it for something the evidence supports. The prompt forbids
+    manufacturing the trappings of provenance precisely so that the *absence*
+    of citations here is honest rather than merely unstyled.
+    """
+    settings = get_settings()
+    if not settings.groq_api_key:
+        return {
+            "answer": "", "claims": [], "conflicts": [],
+            "missing_information": ["no evidence retrieved, and GROQ_API_KEY is not configured"],
+            "source_locators": [], "support_label": "none", "validator_warnings": [],
+        }
+
+    try:
+        response = chat_json(
+            [
+                {
+                    "role": "system",
+                    "content": GENERAL_SYSTEM_PROMPT
+                    + "\n\nRespond with a single JSON object and nothing else, matching "
+                    "exactly this JSON Schema:\n"
+                    + json.dumps(GENERAL_RESPONSE_SCHEMA),
+                },
+                {"role": "user", "content": question},
+            ],
+            model=settings.model_answer,
+            temperature=0.3,
+            max_tokens=MAX_TOKENS,
+        )
+    except LLMError as e:
+        return {
+            "answer": "", "claims": [], "conflicts": [],
+            "missing_information": [f"generation failed: {e}"],
+            "source_locators": [], "support_label": "none", "validator_warnings": [],
+        }
+
+    answer = response.get("answer", "")
+    if not isinstance(answer, str):
+        answer = str(answer)
+
+    return {
+        "answer": answer,
+        "claims": [],
+        "conflicts": [],
+        "missing_information": [],
+        "source_locators": [],
+        "support_label": "ungrounded",
+        "validator_warnings": [],
+    }

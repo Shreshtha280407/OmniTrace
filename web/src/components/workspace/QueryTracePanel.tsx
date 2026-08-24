@@ -1,15 +1,12 @@
 "use client";
 
-import { ArrowLeft, Network, Radar, Waypoints } from "lucide-react";
+import { Network, Radar } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
 
 import { Button } from "@/components/ui/Button";
-import { ConfidenceMeter } from "@/components/ui/ConfidenceMeter";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { EvidenceDetail } from "@/components/ui/EvidenceDetail";
 import { ModalityBadge } from "@/components/ui/ModalityBadge";
-import { FieldRow, PanelSection, PanelShell } from "@/components/ui/PanelShell";
+import { FieldRow, PanelSection } from "@/components/ui/PanelShell";
 import { StatusPill, supportLabel, supportTone } from "@/components/ui/StatusPill";
 import { formatMs, truncateId } from "@/lib/format";
 import { MODALITIES, modalityMeta } from "@/lib/modality";
@@ -18,77 +15,15 @@ import { cn } from "@/lib/utils";
 import { useWorkspace } from "./WorkspaceProvider";
 
 /**
- * Right panel.
+ * How the last answer was produced: plan, modality coverage, stage timings,
+ * primary event, and the full reranked bundle.
  *
- * Two states: the query overview (plan, timings, support, primary event) and,
- * once a citation is clicked, the full record for that evidence item. The
- * overview is the default because it answers "how did this answer get made",
- * which is the question the product exists to make answerable.
+ * This used to be a permanent third column in the chat. It now lives on the
+ * evidence graph, next to the graph modes and the path legend — the retrieval
+ * story was split across two surfaces and neither was complete. Clicking any
+ * bundle row opens that evidence at its stored locator.
  */
-export function InspectorPanel({ onClose }: { onClose?: () => void }) {
-  const {
-    latestResponse,
-    selectedEvidenceId,
-    selectEvidence,
-    evidenceById,
-    openSourceDrawer,
-  } = useWorkspace();
-
-  const selected = selectedEvidenceId ? evidenceById[selectedEvidenceId] : undefined;
-
-  const relationships = useMemo(() => {
-    if (!latestResponse || !selectedEvidenceId) return [];
-    return latestResponse.relationships.filter(
-      (r) => r.from_id === selectedEvidenceId || r.to_id === selectedEvidenceId,
-    );
-  }, [latestResponse, selectedEvidenceId]);
-
-  return (
-    <PanelShell
-      as="aside"
-      label="Evidence inspector"
-      className="h-full border-l border-ink-600/70 bg-ink-850/60"
-      title={selected ? "Evidence" : "Query trace"}
-      actions={
-        <>
-          {selected && (
-            <Button size="xs" variant="ghost" onClick={() => selectEvidence(null)}>
-              <ArrowLeft />
-              Trace
-            </Button>
-          )}
-          {onClose && (
-            <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Close inspector">
-              <ArrowLeft />
-            </Button>
-          )}
-        </>
-      }
-    >
-      {selected ? (
-        <EvidenceDetail
-          evidence={selected}
-          relationships={relationships}
-          evidenceById={evidenceById}
-          eventId={latestResponse?.primary_event_id ?? null}
-          onViewSource={() => openSourceDrawer(selected._id)}
-          onSelectEvidence={(id) => evidenceById[id] && selectEvidence(id)}
-          onOpenGraph={
-            latestResponse?.primary_event_id
-              ? () => {
-                  window.location.href = `/workspace/graph?event=${encodeURIComponent(latestResponse.primary_event_id!)}`;
-                }
-              : undefined
-          }
-        />
-      ) : (
-        <QueryTrace />
-      )}
-    </PanelShell>
-  );
-}
-
-function QueryTrace() {
+export function QueryTrace() {
   const { latestResponse } = useWorkspace();
 
   if (!latestResponse) {
@@ -255,7 +190,7 @@ function QueryTrace() {
  *  is marked, so it is visible how much context backed an answer beyond what
  *  the model chose to reference. */
 function BundleList() {
-  const { latestResponse, selectEvidence, selectedEvidenceId } = useWorkspace();
+  const { latestResponse, openSourceDrawer } = useWorkspace();
   if (!latestResponse) return null;
 
   const citedIds = new Set(latestResponse.claims.flatMap((c) => c.evidence_ids));
@@ -269,11 +204,8 @@ function BundleList() {
           <li key={item._id}>
             <button
               type="button"
-              onClick={() => selectEvidence(item._id)}
-              className={cn(
-                "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                selectedEvidenceId === item._id ? "bg-ink-700" : "hover:bg-ink-750",
-              )}
+              onClick={() => openSourceDrawer(item._id)}
+              className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-ink-750"
             >
               <span aria-hidden className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", meta.dot)} />
               <span className="min-w-0 flex-1">

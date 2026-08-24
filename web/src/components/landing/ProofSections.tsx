@@ -403,14 +403,17 @@ export function ClosingCTA() {
           Ingest a source, ask a question, and open every claim at the frame, page or region it came from.
         </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="lg" variant="primary">
+          <Button asChild size="lg" variant="marketing">
             <Link href="/workspace">
               Open workspace
               <ArrowRight />
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline">
-            <Link href="/workspace/graph">View evidence graph</Link>
+            {/* Not the evidence graph: it is drawn from one conversation's
+                bundle, so arriving there straight from the marketing page
+                lands on an empty canvas. */}
+            <a href="#workflow">See how it works</a>
           </Button>
         </div>
       </div>

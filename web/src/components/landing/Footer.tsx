@@ -21,7 +21,6 @@ const COLUMNS = [
     heading: "Product",
     links: [
       { label: "Workspace", href: "/workspace" },
-      { label: "Evidence graph", href: "/workspace/graph" },
       { label: "Workflow", href: "/#workflow" },
       { label: "Provenance", href: "/#provenance" },
     ],

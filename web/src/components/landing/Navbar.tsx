@@ -17,6 +17,12 @@ const LINKS = [
 /**
  * Sticky marketing navbar. **Open workspace** is the single high-emphasis
  * action and the bridge from the marketing surface into the product.
+ *
+ * There is deliberately no "Evidence graph" link here. The graph is built from
+ * one conversation's evidence bundle, so reaching it from the marketing page
+ * lands on an empty canvas with nothing to draw — it belongs inside the
+ * conversation that owns the evidence, and that is where the entry point now
+ * lives.
  */
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -63,10 +69,7 @@ export function Navbar() {
         </ul>
 
         <div className="ml-auto flex items-center gap-2">
-          <Button asChild size="sm" variant="ghost" className="hidden sm:inline-flex">
-            <Link href="/workspace/graph">Evidence graph</Link>
-          </Button>
-          <Button asChild size="sm" variant="primary" className="hidden sm:inline-flex">
+          <Button asChild size="sm" variant="marketing" className="hidden sm:inline-flex">
             <Link href="/workspace">
               Open workspace
               <ArrowRight />
@@ -101,10 +104,7 @@ export function Navbar() {
               </li>
             ))}
             <li className="mt-2 flex flex-col gap-2 border-t border-ink-700 pt-3">
-              <Button asChild variant="secondary">
-                <Link href="/workspace/graph">Evidence graph</Link>
-              </Button>
-              <Button asChild variant="primary">
+              <Button asChild variant="marketing">
                 <Link href="/workspace">Open workspace</Link>
               </Button>
             </li>

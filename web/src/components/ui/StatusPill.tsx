@@ -73,6 +73,11 @@ export function supportTone(support: string): StatusTone {
       return "caution";
     case "low":
       return "caution";
+    case "ungrounded":
+      // Not a degraded grounded answer — a different kind of answer entirely.
+      // "contextual" reads as informational rather than as a warning about
+      // weak evidence, because there is no evidence being judged here.
+      return "contextual";
     default:
       return "pending"; // "none" — no claims were produced
   }
@@ -86,6 +91,8 @@ export function supportLabel(support: string): string {
       return "Partial support";
     case "low":
       return "Low support";
+    case "ungrounded":
+      return "No sources · general knowledge";
     default:
       return "Insufficient evidence";
   }

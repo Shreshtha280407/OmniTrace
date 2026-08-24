@@ -28,6 +28,12 @@ const button = cva(
         // Marketing outline on dark cinematic ground.
         outline:
           "border border-ink-500/70 bg-ink-900/40 text-ink-50 backdrop-blur-sm hover:border-signal-500/50 hover:bg-ink-800/60",
+        // Marketing primary. Deliberately *not* `primary`: teal is this
+        // system's encoding for evidence and provenance, and a solid mint slab
+        // is both the loudest object on the page and a spend of a colour that
+        // is supposed to carry meaning. Near-white reads as premium on a dark
+        // ground and leaves the accent to mean what it means.
+        marketing: "bg-ink-50 text-ink-950 hover:bg-white active:bg-ink-100",
       },
       size: {
         xs: "h-7 rounded-sm px-2.5 text-ui-xs [&_svg]:size-3.5",

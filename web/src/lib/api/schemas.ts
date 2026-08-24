@@ -256,7 +256,7 @@ export const QueryResponseSchema = z
     evidence: z.array(EvidenceItemSchema).default([]),
     relationships: z.array(RelationshipSchema).default([]),
     source_locators: z.array(SourceLocatorSchema).default([]),
-    support_label: z.enum(["high", "medium", "low", "none"]).catch("none"),
+    support_label: z.enum(["high", "medium", "low", "none", "ungrounded"]).catch("none"),
     stage_timings_ms: StageTimingsSchema,
     query_plan: QueryPlanSchema.default({
       answer_slots: [],

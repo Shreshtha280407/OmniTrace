@@ -13,23 +13,49 @@ import { ApiError } from "@/lib/api";
 import type { QueryResponse } from "@/lib/api/schemas";
 import { formatMs } from "@/lib/format";
 import { evidenceTruncatedCount, type Turn } from "@/lib/sessions";
+import { useSourceCount } from "@/hooks/useSourceCount";
 import { cn } from "@/lib/utils";
 
+import { AnswerSources } from "./AnswerSources";
 import { Composer } from "./Composer";
 import { ProcessingTrace } from "./ProcessingTrace";
+import { WorkspaceHeader } from "./WorkspaceHeader";
 import { useWorkspace } from "./WorkspaceProvider";
 
-/** Examples that demonstrate what this system does that a text RAG cannot:
- *  cross-modal, locator-bearing, multi-part questions. */
+/** Examples shown only once this conversation actually has sources.
+ *
+ *  Two earlier problems: they were offered on a completely empty workspace,
+ *  which invited the user to click a question about material that did not
+ *  exist; and they named the demo corpus's own subject matter (Redis, Postgres,
+ *  database load), which is wrong for anybody who uploads their own files.
+ *  These are phrased against whatever the conversation happens to contain, and
+ *  each still exercises a retrieval behaviour a plain text RAG cannot. */
 const EXAMPLE_PROMPTS = [
-  "What architecture reduced database load, who explained it, and where was it shown?",
-  "Which trade-offs were raised in the documents but never discussed out loud?",
-  "Show me every point where a diagram on screen matched something being said.",
-  "What was decided, and what evidence is missing to confirm it?",
+  {
+    kind: "Overview",
+    detail: "spans every source in this chat",
+    question: "What do these sources cover, and what are the main points?",
+  },
+  {
+    kind: "Contrastive",
+    detail: "what documents say that speech does not",
+    question: "What is stated in the documents but never discussed out loud?",
+  },
+  {
+    kind: "Temporal",
+    detail: "visual state aligned to an utterance",
+    question: "Show me every point where something on screen matched something being said.",
+  },
+  {
+    kind: "Gap-aware",
+    detail: "reports what is absent, not a guess",
+    question: "What was decided, and what evidence is missing to confirm it?",
+  },
 ];
 
 export function Conversation() {
   const { activeSession, isQuerying, activeTurnId, submitQuery, hydrated } = useWorkspace();
+  const sourceCount = useSourceCount();
   const scrollRef = useRef<HTMLDivElement>(null);
   const turns = activeSession?.turns ?? [];
 
@@ -54,15 +80,33 @@ export function Conversation() {
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-ink-900" aria-label="Investigation conversation">
+      <WorkspaceHeader />
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+        {/* The empty state centres in the column instead of stacking at the
+            top of it — top-aligned, it left a third of the workspace as blank
+            floor between the prompts and the composer, which reads as a
+            screen that failed to load rather than one waiting for input. */}
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-3xl flex-col px-4 py-6 sm:px-6",
+            // `safe center` and not plain `justify-center`: on a short viewport
+            // the prompt set is taller than the column, and ordinary centring
+            // overflows equally in both directions — the top of the empty state
+            // ends up above the scroll origin and is unreachable. `safe` falls
+            // back to flex-start exactly when that would happen.
+            turns.length === 0 && hydrated && "min-h-full [justify-content:safe_center] py-10",
+          )}
+        >
           {!hydrated ? (
             <div className="space-y-4" aria-hidden>
               <div className="skeleton h-6 w-2/3" />
               <div className="skeleton h-24 w-full" />
             </div>
           ) : turns.length === 0 ? (
-            <EmptyPrompts onPick={(q) => void submitQuery({ question: q, requiredModalities: [], debugTrace: false })} />
+            <EmptyPrompts
+              hasSources={sourceCount > 0}
+              onPick={(q) => void submitQuery({ question: q, requiredModalities: [], debugTrace: false })}
+            />
           ) : (
             <ol className="space-y-10">
               {turns.map((turn) => (
@@ -84,42 +128,62 @@ export function Conversation() {
   );
 }
 
-function EmptyPrompts({ onPick }: { onPick: (question: string) => void }) {
+function EmptyPrompts({ hasSources, onPick }: { hasSources: boolean; onPick: (question: string) => void }) {
   return (
-    <div className="py-10">
-      <div className="mb-8">
+    <div>
+      <div className="mb-7">
         <div className="mb-4 flex size-10 items-center justify-center rounded-lg border border-signal-600/30 bg-signal-900/40">
           <Sparkles className="size-4 text-signal-400" aria-hidden />
         </div>
-        <h2 className="font-display text-[1.75rem] leading-tight text-ink-50">Start an investigation</h2>
-        <p className="mt-2 max-w-lg text-pretty text-ui-sm leading-relaxed text-ink-300">
-          Ask across every source in this collection. Answers cite the evidence they rest on, and every citation opens
-          at the exact timestamp, page or region it came from.
+        <h2 className="font-display text-[1.875rem] leading-tight text-ink-50">
+          {hasSources ? "Ask about your sources" : "Start a conversation"}
+        </h2>
+        <p className="mt-2.5 max-w-lg text-pretty text-ui-sm leading-relaxed text-ink-200">
+          {hasSources
+            ? "Answers are grounded in the sources you added here, and every citation opens at the exact timestamp, page or region it came from."
+            : "Ask anything to get started. Add a video, recording, image or document and answers will be grounded in it — cited back to the exact timestamp, page or region."}
         </p>
       </div>
 
-      <ul className="space-y-2">
+      {/* No suggestions until this conversation actually has something to
+          search. Offering "what do these sources cover?" against an empty
+          collection invites a click that cannot be honoured. */}
+      {!hasSources ? null : (
+      <>
+      <p className="eyebrow mb-3">Try one of these</p>
+      <ul className="grid gap-2 sm:grid-cols-2">
         {EXAMPLE_PROMPTS.map((prompt) => (
-          <li key={prompt}>
+          <li key={prompt.question}>
             <button
               type="button"
-              onClick={() => onPick(prompt)}
-              className="group flex w-full items-start gap-3 rounded-lg border border-ink-600/70 bg-ink-850/50 px-3.5 py-3 text-left transition-colors duration-150 hover:border-signal-600/40 hover:bg-ink-800"
+              onClick={() => onPick(prompt.question)}
+              className="group flex h-full w-full flex-col rounded-lg border border-ink-600/70 bg-ink-850/50 p-3.5 text-left transition-all duration-150 hover:-translate-y-px hover:border-signal-600/50 hover:bg-ink-800 hover:shadow-panel"
             >
-              <Search className="mt-0.5 size-3.5 shrink-0 text-ink-400 transition-colors group-hover:text-signal-400" aria-hidden />
-              <span className="text-pretty text-ui-sm leading-relaxed text-ink-200 group-hover:text-ink-50">
-                {prompt}
+              <span className="mb-2 flex items-center gap-2">
+                <Search
+                  className="size-3 shrink-0 text-ink-400 transition-colors group-hover:text-signal-400"
+                  aria-hidden
+                />
+                <span className="font-mono text-ui-2xs uppercase tracking-[0.14em] text-ink-300 transition-colors group-hover:text-signal-300">
+                  {prompt.kind}
+                </span>
               </span>
+              <span className="text-pretty text-ui-sm leading-relaxed text-ink-100 transition-colors group-hover:text-ink-50">
+                {prompt.question}
+              </span>
+              <span className="mt-2 text-ui-2xs leading-relaxed text-ink-400">{prompt.detail}</span>
             </button>
           </li>
         ))}
       </ul>
+      </>
+      )}
     </div>
   );
 }
 
 function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
-  const { evidenceById, selectEvidence, selectedEvidenceId, retryTurn } = useWorkspace();
+  const { evidenceById, openSourceDrawer, selectedEvidenceId, retryTurn } = useWorkspace();
   const [answerRevealed, setAnswerRevealed] = useState(false);
 
   const jobIds = turn.jobIds ?? [];
@@ -181,7 +245,7 @@ function TurnView({ turn, running }: { turn: Turn; running: boolean }) {
           response={turn.response}
           evidenceById={evidenceById}
           selectedEvidenceId={selectedEvidenceId}
-          onSelectEvidence={selectEvidence}
+          onSelectEvidence={openSourceDrawer}
           revealed={answerRevealed}
           onRevealed={() => setAnswerRevealed(true)}
         />
@@ -291,6 +355,16 @@ function ResponseView({
               activeEvidenceId={selectedEvidenceId}
             />
           ))}
+        </div>
+      )}
+
+      {/* Provenance affordance. Rendered only for an answer that actually has a
+          bundle behind it: an ungrounded answer (no sources in the
+          conversation) has nothing to open, and offering the control anyway
+          would imply provenance it does not have. */}
+      {response.support_label !== "ungrounded" && response.evidence.length > 0 && (
+        <div className="pt-0.5">
+          <AnswerSources evidence={response.evidence} />
         </div>
       )}
 

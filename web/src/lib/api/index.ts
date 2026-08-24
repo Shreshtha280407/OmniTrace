@@ -29,6 +29,7 @@ export {
   API_PREFIX,
   ApiError,
   DEFAULT_COLLECTION_ID,
+  documentPageUrl,
   assetUrl,
   setAuthTokenProvider,
   type ApiErrorKind,

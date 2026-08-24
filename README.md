@@ -406,6 +406,36 @@ tests/           acceptance tests, one file per phase, + shared live-server fixt
   plus a plain-English note instead of a number when there's nothing real
   to report. Neither ever pre-fills an expected-looking value.
 
+## Conversation scoping and the no-source answer
+
+Two behaviours worth knowing, because they change what a "collection" means
+and when an answer is grounded.
+
+**Every conversation owns a collection.** `POST /api/v1/sources` takes an
+optional `collection_id` form field and the web client mints a fresh one per
+investigation, so a file uploaded in one conversation is not retrievable from
+another. Omit the field and it still falls back to `COLLECTION_ID` from the
+environment, which is what `scripts/demo.py` and the curl flow in
+`test_data/README.md` rely on — those are unchanged.
+
+Note that the stage idempotency key includes `source_id`, not only the content
+hash. Uploading identical bytes into a second collection is genuinely
+different work — it needs its own evidence rows — and a content-only key made
+the runner skip every stage as already-done, yielding a source with zero
+evidence. Duplicate protection *within* one collection still happens at upload
+time, by checksum.
+
+**A question asked with no sources is answered from general knowledge.** When
+retrieval returns an empty bundle, `generate_general_answer()` answers
+directly and the response carries `support_label: "ungrounded"` with empty
+`claims` and `source_locators`. This does not weaken the grounding guarantee,
+because it is a different guarantee: an answer built from a bundle still may
+cite only IDs inside that bundle and still reports its gaps. The ungrounded
+prompt explicitly forbids inventing citations, timestamps, page numbers or
+speaker names, so the absence of provenance there is honest rather than merely
+unstyled — and `support_label` makes the two cases distinguishable everywhere
+downstream.
+
 ## Limitations
 
 Honest accounting of every real gap and every cut-line actually invoked,

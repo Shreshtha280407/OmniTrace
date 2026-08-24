@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, GitBranch, Maximize2, Network, Route, Share2 } from "lucide-react";
+import { ArrowLeft, GitBranch, Maximize2, Network, Radar, Route, Share2, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -21,6 +21,8 @@ import { DEFAULT_FILTERS, GraphContextRail, type GraphFilters } from "./GraphCon
 import { GraphFallback } from "./GraphFallback";
 import { NodeInspector } from "./NodeInspector";
 import { TimelineScrubber } from "./TimelineScrubber";
+import { QueryTrace } from "@/components/workspace/QueryTracePanel";
+
 import { buildGraph, computeStats, settleLayout, type GraphData } from "./model";
 
 const GraphCanvas = dynamic(() => import("./GraphCanvas"), { ssr: false });
@@ -45,6 +47,7 @@ export function GraphExplorer() {
   const eventQuery = useEvent(eventId);
 
   const [mode, setMode] = useState<GraphMode>("explore");
+  const [traceOpen, setTraceOpen] = useState(false);
   const [filters, setFilters] = useState<GraphFilters>(DEFAULT_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -294,6 +297,23 @@ export function GraphExplorer() {
             ))}
           </div>
 
+          {/* Query trace lives here rather than in the chat: the plan, channel
+              weights and stage timings belong with the graph they produced. */}
+          <button
+            type="button"
+            aria-pressed={traceOpen}
+            onClick={() => setTraceOpen((v) => !v)}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-ui-xs transition-colors",
+              traceOpen
+                ? "border-signal-600/50 bg-ink-700 text-ink-50"
+                : "border-ink-600 text-ink-300 hover:bg-ink-750 hover:text-ink-100",
+            )}
+          >
+            <Radar className="size-3.5" aria-hidden />
+            Query trace
+          </button>
+
           <p className="hidden text-ui-2xs text-ink-400 md:block">
             {mode === "explore" && "Drag to orbit · scroll to zoom · click to select · double-click to focus"}
             {mode === "query_path" && "query → seed result → event → expansion → parent proof"}
@@ -308,6 +328,7 @@ export function GraphExplorer() {
           </div>
         </div>
 
+        <div className="flex min-h-0 flex-1">
         {/* canvas surface */}
         <div className="relative min-h-0 flex-1">
           <div className="grid-field absolute inset-0 opacity-40" aria-hidden />
@@ -380,6 +401,29 @@ export function GraphExplorer() {
               />
             </div>
           )}
+        </div>
+
+        {/* ── query trace ──────────────────────────────────────── */}
+        {traceOpen && (
+          <aside
+            className="hidden w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-ink-600/70 bg-ink-850/60 lg:flex"
+            aria-label="Query trace"
+          >
+            <div className="sticky top-0 z-10 flex h-11 shrink-0 items-center gap-2 border-b border-ink-600/70 bg-ink-850 px-3">
+              <h2 className="text-ui-sm font-medium text-ink-50">Query trace</h2>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="ml-auto"
+                onClick={() => setTraceOpen(false)}
+                aria-label="Close query trace"
+              >
+                <X />
+              </Button>
+            </div>
+            <QueryTrace />
+          </aside>
+        )}
         </div>
       </section>
 

@@ -116,6 +116,7 @@ async def run_stage(
 
     cfg_hash = config_hash(config)
     key = idempotency_key(
+        source_id=source_id,
         source_sha256=source_doc["sha256"],
         stage_name=stage,
         processor_version=processor_version,
@@ -172,6 +173,7 @@ async def run_probe_stage(source_id: str) -> None:
     processor_version = "v1"
     cfg_hash = config_hash({"processor_version": processor_version})
     key = idempotency_key(
+        source_id=source_id,
         source_sha256=source_doc["sha256"],
         stage_name="probe",
         processor_version=processor_version,

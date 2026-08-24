@@ -1,41 +1,36 @@
 "use client";
 
-import { Menu, PanelRight, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Wordmark } from "@/components/brand/Wordmark";
 import { Button } from "@/components/ui/Button";
 import { DemoBadge } from "@/components/ui/DemoBadge";
-import { useSourceCount } from "@/hooks/useSourceCount";
 import { cn } from "@/lib/utils";
 
 import { CommandPalette } from "./CommandPalette";
 import { Conversation } from "./Conversation";
-import { InspectorPanel } from "./InspectorPanel";
 import { SessionsPanel } from "./SessionsPanel";
 import { SourceDrawer } from "./SourceDrawer";
 import { useWorkspace } from "./WorkspaceProvider";
 
 /**
- * Three-panel workspace shell.
+ * Two-panel workspace shell: investigations rail, conversation.
  *
- * Desktop is a real three-column grid. Below `lg` the outer two panels become
- * slide-overs reached from a compact top bar — the centre conversation is
- * always the full width of the screen, because that is the part you cannot use
- * a workspace without.
+ * There was a third column holding the query trace. It has moved to the
+ * evidence graph, where the rest of the retrieval story already lives — the
+ * graph modes, the path legend and the channel weights were all over there
+ * while the trace sat in the chat, and neither surface was complete on its own.
+ * Removing it also gives the conversation the full width, which is what a chat
+ * wants.
+ *
+ * Evidence is now reached by opening it: a citation, or **View source** under
+ * an answer, opens the source drawer at the stored locator.
  */
 export function WorkspaceShell() {
-  const { selectedEvidenceId, sourceDrawerEvidenceId, closeSourceDrawer, selectEvidence } = useWorkspace();
+  const { selectedEvidenceId, sourceDrawerEvidenceId, selectEvidence } = useWorkspace();
   const [railOpen, setRailOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const sourceCount = useSourceCount();
-
-  // Selecting a citation on a small screen should reveal the inspector, or the
-  // click appears to do nothing.
-  useEffect(() => {
-    if (selectedEvidenceId) setInspectorOpen(true);
-  }, [selectedEvidenceId]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -45,12 +40,8 @@ export function WorkspaceShell() {
         return;
       }
       if (event.key === "Escape") {
-        // Innermost first: drawer, then slide-overs, then the selection.
+        // Innermost first: drawer, then the rail, then the selection.
         if (sourceDrawerEvidenceId) return; // the drawer handles its own Escape
-        if (inspectorOpen) {
-          setInspectorOpen(false);
-          return;
-        }
         if (railOpen) {
           setRailOpen(false);
           return;
@@ -60,7 +51,7 @@ export function WorkspaceShell() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [inspectorOpen, railOpen, selectedEvidenceId, selectEvidence, sourceDrawerEvidenceId, closeSourceDrawer]);
+  }, [railOpen, selectedEvidenceId, selectEvidence, sourceDrawerEvidenceId]);
 
   return (
     <>
@@ -72,25 +63,16 @@ export function WorkspaceShell() {
           <Menu />
         </Button>
         <Wordmark showMark={false} />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className="ml-auto"
-          onClick={() => setInspectorOpen(true)}
-          aria-label="Open evidence inspector"
-        >
-          <PanelRight />
-        </Button>
       </div>
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[theme(spacing.rail)_minmax(0,1fr)_theme(spacing.inspector)]">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[theme(spacing.rail)_minmax(0,1fr)]">
         {/* ── left rail ─────────────────────────────────────────── */}
         <div className="hidden min-h-0 lg:block">
-          <SessionsPanel sourceCount={sourceCount} />
+          <SessionsPanel />
         </div>
 
         <SlideOver open={railOpen} onClose={() => setRailOpen(false)} side="left" label="Investigations">
-          <SessionsPanel sourceCount={sourceCount} onNavigate={() => setRailOpen(false)} />
+          <SessionsPanel onNavigate={() => setRailOpen(false)} />
         </SlideOver>
 
         {/* ── conversation ──────────────────────────────────────── */}
@@ -98,14 +80,6 @@ export function WorkspaceShell() {
           <Conversation />
         </main>
 
-        {/* ── inspector ─────────────────────────────────────────── */}
-        <div className="hidden min-h-0 lg:block">
-          <InspectorPanel />
-        </div>
-
-        <SlideOver open={inspectorOpen} onClose={() => setInspectorOpen(false)} side="right" label="Evidence inspector">
-          <InspectorPanel onClose={() => setInspectorOpen(false)} />
-        </SlideOver>
       </div>
 
       <SourceDrawer />

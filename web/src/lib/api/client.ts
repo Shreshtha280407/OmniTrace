@@ -242,11 +242,15 @@ export interface UploadProgress {
  */
 export function createSource(
   file: File,
-  opts: { onProgress?: (p: UploadProgress) => void; signal?: AbortSignal } = {},
+  opts: { onProgress?: (p: UploadProgress) => void; signal?: AbortSignal; collectionId?: string } = {},
 ): Promise<SourceCreateResponse> {
   return new Promise(async (resolve, reject) => {
     const form = new FormData();
     form.append("file", file);
+    // Which body of evidence this file joins. Omitted, the backend falls back
+    // to its configured default — which is what made every conversation share
+    // one corpus.
+    form.append("collection_id", opts.collectionId ?? DEFAULT_COLLECTION_ID);
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_BASE_URL}${API_PREFIX}/sources`);
@@ -378,6 +382,13 @@ export function runEvaluation(
 
 /** Streams a stored asset. The backend serves binaries from the local asset
  *  store; media elements need a plain URL, not a parsed body. */
+/** One rasterised page of a paged document. Lets a PDF be shown as a single
+ *  cited page with the stored bounding box drawn over it, exactly like an
+ *  image — which the raw file in an <img> could never be. */
+export function documentPageUrl(sourceId: string, page: number): string {
+  return `${API_BASE_URL}/assets/page/${encodeURIComponent(sourceId)}/${page}`;
+}
+
 export function assetUrl(storagePath: string): string {
   return `${API_BASE_URL}/assets/${encodeURI(storagePath.replace(/^\.?\/?data\/assets\/?/, ""))}`;
 }

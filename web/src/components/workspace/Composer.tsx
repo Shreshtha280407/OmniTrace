@@ -134,10 +134,13 @@ export function Composer() {
                     }
                     title={`Require ${MODALITY_META[modality].label} evidence`}
                     className={cn(
-                      "inline-flex h-[22px] items-center gap-1 rounded-sm border px-1.5 font-mono text-ui-2xs uppercase tracking-[0.06em] transition-colors",
+                      // Off is borderless. Four outlined boxes sitting permanently
+                      // unlit made the composer read as a debug toolbar; the
+                      // border is what now *means* "this filter is on".
+                      "inline-flex h-[22px] items-center gap-1 rounded-sm border px-1.5 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors",
                       on
                         ? cn(MODALITY_META[modality].border, MODALITY_META[modality].bg, MODALITY_META[modality].text)
-                        : "border-ink-600 text-ink-400 hover:border-ink-500 hover:text-ink-200",
+                        : "border-transparent text-ink-400 hover:bg-ink-700/60 hover:text-ink-100",
                     )}
                   >
                     <span
@@ -162,7 +165,7 @@ export function Composer() {
                 "inline-flex h-[22px] items-center gap-1.5 rounded-sm border px-1.5 text-ui-2xs transition-colors",
                 debugTrace
                   ? "border-uv-500/40 bg-uv-800/40 text-uv-300"
-                  : "border-ink-600 text-ink-400 hover:border-ink-500 hover:text-ink-200",
+                  : "border-transparent text-ink-400 hover:bg-ink-700/60 hover:text-ink-100",
               )}
             >
               <Bug className="size-3" aria-hidden />

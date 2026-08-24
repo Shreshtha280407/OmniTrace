@@ -1,14 +1,14 @@
 "use client";
 
-import { FileWarning, Pause, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Expand, Pause, Play, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import { assetUrl, IS_DEMO_MODE } from "@/lib/api";
+import { assetUrl, documentPageUrl, IS_DEMO_MODE } from "@/lib/api";
 import type { EvidenceItem, Source } from "@/lib/api/schemas";
 import { formatTimecode } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import { locatorKind } from "@/components/ui/SourceLocator";
 
 /**
  * Renders a source at the locator stored on a piece of evidence.
@@ -22,22 +22,23 @@ import { locatorKind } from "@/components/ui/SourceLocator";
  * elements are replaced by a schematic that still honours the locator — an
  * accurate diagram beats a broken <video> element.
  */
-export function SourceViewer({ source, evidence }: { source: Source; evidence: EvidenceItem }) {
-  const kind = locatorKind(evidence.location);
-
-  if (kind === "none") {
-    return (
-      <div className="flex flex-col items-center gap-2 rounded-lg border border-caution-500/30 bg-caution-900/25 px-4 py-8 text-center">
-        <FileWarning className="size-5 text-caution-500" aria-hidden />
-        <p className="text-ui-sm font-medium text-ink-50">No locator stored</p>
-        <p className="max-w-xs text-pretty text-ui-2xs leading-relaxed text-ink-300">
-          This evidence item has no timestamp, page or region recorded, so there is no position in the source to open
-          it at.
-        </p>
-      </div>
-    );
+export function SourceViewer({ source, evidence }: { source: Source; evidence?: EvidenceItem }) {
+  // No evidence means "just open this file" — the files menu opens a whole
+  // source with no particular position in it, so there is no locator to honour
+  // and nothing to warn about.
+  if (!evidence) {
+    if (source.media_type === "video" || source.media_type === "audio") {
+      return <TimeBasedViewer source={source} />;
+    }
+    return <SpatialViewer source={source} />;
   }
 
+  // A missing locator is a missing *highlight*, not a missing file. This used
+  // to replace the whole viewer with a warning, so an image whose evidence
+  // carried no bounding box could not be looked at at all — the one thing the
+  // panel exists to do. The viewers below already treat every locator field as
+  // optional: no bbox draws no overlay, no page opens at the first, no
+  // start_ms opens at zero. The absence is reported in the caption instead.
   if (source.media_type === "video" || source.media_type === "audio") {
     return <TimeBasedViewer source={source} evidence={evidence} />;
   }
@@ -46,16 +47,24 @@ export function SourceViewer({ source, evidence }: { source: Source; evidence: E
 
 // ── time-based: video and audio ────────────────────────────────────────────
 
-function TimeBasedViewer({ source, evidence }: { source: Source; evidence: EvidenceItem }) {
+function TimeBasedViewer({ source, evidence }: { source: Source; evidence?: EvidenceItem }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [currentMs, setCurrentMs] = useState(evidence.location.start_ms ?? 0);
+  const [currentMs, setCurrentMs] = useState(evidence?.location.start_ms ?? 0);
   const [mediaError, setMediaError] = useState(false);
 
-  const startMs = evidence.location.start_ms ?? 0;
-  const endMs = evidence.location.end_ms ?? startMs;
+  const startMs = evidence?.location.start_ms ?? 0;
+  const endMs = evidence?.location.end_ms ?? startMs;
   const durationMs = source.duration_ms ?? Math.max(endMs, startMs) + 1;
   const isVideo = source.media_type === "video";
+
+  // Playback is confined to the cited span when there is one. A citation that
+  // says 01:44.2–02:01.9 means those seventeen seconds; letting it run on into
+  // the rest of the recording makes the viewer show material the claim never
+  // rested on. Opened from the files menu there is no citation and the whole
+  // recording plays.
+  const clipped = Boolean(evidence && evidence.location.start_ms !== null && evidence.location.start_ms !== undefined);
+  const clipEndMs = endMs > startMs ? endMs : durationMs;
 
   // Seek to the stored start the moment the element can accept a seek.
   useEffect(() => {
@@ -74,8 +83,10 @@ function TimeBasedViewer({ source, evidence }: { source: Source; evidence: Evide
     const el = mediaRef.current;
     if (!el) return;
     if (el.paused) {
-      // Re-seek if playback drifted outside the cited span.
-      if (el.currentTime * 1000 < startMs - 250 || el.currentTime * 1000 > endMs + 2000) {
+      // Re-seek if playback drifted outside the cited span — including the
+      // case where it has just been stopped at the span's end.
+      const ms = el.currentTime * 1000;
+      if (clipped && (ms < startMs - 250 || ms >= clipEndMs - 50)) {
         el.currentTime = startMs / 1000;
       }
       void el.play();
@@ -92,7 +103,7 @@ function TimeBasedViewer({ source, evidence }: { source: Source; evidence: Evide
         {unavailable ? (
           <SchematicFrame
             label={isVideo ? "video frame" : "audio waveform"}
-            bbox={evidence.location.bbox_norm}
+            bbox={evidence?.location.bbox_norm}
             caption={
               IS_DEMO_MODE
                 ? "Demo mode — no media bytes are served. The locator below is the real stored value."
@@ -109,7 +120,14 @@ function TimeBasedViewer({ source, evidence }: { source: Source; evidence: Evide
             onError={() => setMediaError(true)}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
+            onTimeUpdate={(e) => {
+              const ms = e.currentTarget.currentTime * 1000;
+              setCurrentMs(ms);
+              if (clipped && ms >= clipEndMs) {
+                e.currentTarget.pause();
+                e.currentTarget.currentTime = clipEndMs / 1000;
+              }
+            }}
             className="aspect-video w-full bg-black"
           >
             <track kind="captions" />
@@ -124,15 +142,22 @@ function TimeBasedViewer({ source, evidence }: { source: Source; evidence: Evide
               onError={() => setMediaError(true)}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
-              onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
+              onTimeUpdate={(e) => {
+                const ms = e.currentTarget.currentTime * 1000;
+                setCurrentMs(ms);
+                if (clipped && ms >= clipEndMs) {
+                  e.currentTarget.pause();
+                  e.currentTarget.currentTime = clipEndMs / 1000;
+                }
+              }}
               className="w-full"
             />
           </div>
         )}
 
         {/* Bounding box overlay for OCR regions on video frames. */}
-        {isVideo && evidence.location.bbox_norm && !unavailable && (
-          <BBoxOverlay bbox={evidence.location.bbox_norm} />
+        {isVideo && evidence?.location.bbox_norm && !unavailable && (
+          <BBoxOverlay bbox={evidence?.location.bbox_norm} />
         )}
       </div>
 
@@ -180,11 +205,25 @@ function TimeBasedViewer({ source, evidence }: { source: Source; evidence: Evide
 
 // ── spatial: documents and images ──────────────────────────────────────────
 
-function SpatialViewer({ source, evidence }: { source: Source; evidence: EvidenceItem }) {
+function SpatialViewer({ source, evidence }: { source: Source; evidence?: EvidenceItem }) {
   const [imageError, setImageError] = useState(false);
-  const page = evidence.location.page;
-  const bbox = evidence.location.bbox_norm;
+  const [fullscreen, setFullscreen] = useState(false);
+  const isDocument = source.media_type === "document";
+  const pageCount = source.page_count ?? 1;
+
+  // A cited document opens at its page and stays there — that page *is* the
+  // citation. Opened from the files menu there is no citation, so the whole
+  // document is browsable from the first page.
+  const citedPage = evidence?.location.page ?? null;
+  const [browsePage, setBrowsePage] = useState(citedPage ?? 1);
+  const page = isDocument ? (citedPage ?? browsePage) : evidence?.location.page;
+
+  const bbox = evidence?.location.bbox_norm;
   const unavailable = IS_DEMO_MODE || imageError;
+
+  // Documents are served a page at a time; images are served whole.
+  const src = isDocument ? documentPageUrl(source._id, page ?? 1) : assetUrl(source.storage_path);
+  const browsable = isDocument && citedPage === null && pageCount > 1;
 
   return (
     <div className="space-y-2">
@@ -201,30 +240,73 @@ function SpatialViewer({ source, evidence }: { source: Source; evidence: Evidenc
             }
           />
         ) : (
-          <div className="relative">
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            className="group relative block w-full cursor-zoom-in"
+            aria-label={`View ${source.filename} full screen`}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={assetUrl(source.storage_path)}
+              src={src}
               alt={`${source.filename}${page ? `, page ${page}` : ""}`}
               onError={() => setImageError(true)}
               className="w-full"
             />
             {bbox && <BBoxOverlay bbox={bbox} />}
-          </div>
+            <span className="pointer-events-none absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-ink-950/75 px-1.5 py-1 font-mono text-[10px] text-ink-100 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+              <Expand className="size-3" aria-hidden />
+              expand
+            </span>
+          </button>
         )}
       </div>
 
+      {fullscreen && !unavailable && (
+        <Lightbox
+          src={src}
+          alt={source.filename}
+          bbox={bbox}
+          onClose={() => setFullscreen(false)}
+        />
+      )}
+
       <div className="flex items-center gap-2 rounded-lg border border-ink-600 bg-ink-850/70 px-2.5 py-2">
+        {browsable && (
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setBrowsePage((n) => Math.max(1, n - 1))}
+              disabled={browsePage <= 1}
+              className="inline-flex size-6 items-center justify-center rounded-sm border border-ink-600 text-ink-200 transition-colors hover:bg-ink-700 disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="size-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => setBrowsePage((n) => Math.min(pageCount, n + 1))}
+              disabled={browsePage >= pageCount}
+              className="inline-flex size-6 items-center justify-center rounded-sm border border-ink-600 text-ink-200 transition-colors hover:bg-ink-700 disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-label="Next page"
+            >
+              <ChevronRight className="size-3.5" aria-hidden />
+            </button>
+          </span>
+        )}
         {page !== null && page !== undefined && (
           <span className="font-mono text-ui-2xs tabular text-ink-100">
             page {page}
             {source.page_count ? <span className="text-ink-400"> of {source.page_count}</span> : null}
+            {citedPage !== null && <span className="text-signal-400"> · cited</span>}
           </span>
         )}
-        {bbox && (
+        {bbox ? (
           <span className="ml-auto font-mono text-[10px] tabular text-ink-400">
             [{bbox.x1.toFixed(3)}, {bbox.y1.toFixed(3)}] → [{bbox.x2.toFixed(3)}, {bbox.y2.toFixed(3)}]
           </span>
+        ) : (
+          <span className="ml-auto font-mono text-[10px] text-ink-400">no stored region · whole file</span>
         )}
       </div>
     </div>
@@ -297,5 +379,94 @@ function SchematicFrame({
         {caption}
       </p>
     </div>
+  );
+}
+
+/**
+ * Full-viewport view of a still image.
+ *
+ * The drawer is a ~672px column, which is not enough to read a diagram or a
+ * scanned page. The bounding box is drawn here too — the point of enlarging
+ * the image is usually to look at the region that was cited, so dropping the
+ * highlight at the exact moment it becomes legible would be backwards.
+ */
+function Lightbox({
+  src,
+  alt,
+  bbox,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  bbox?: { x1: number; y1: number; x2: number; y2: number } | null;
+  onClose: () => void;
+}) {
+  const handleKey = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // stopImmediatePropagation, not stopPropagation: Radix's dismissable
+        // layer listens on the document too, and stopPropagation only stops
+        // the event reaching *other nodes* — listeners already bound to this
+        // same node still fire. Without this, one Escape closed the lightbox
+        // and the drawer behind it in a single press.
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        e.preventDefault();
+        onClose();
+      }
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    document.addEventListener("keydown", handleKey, true);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleKey, true);
+      document.body.style.overflow = previous;
+    };
+  }, [handleKey]);
+
+  // Portalled to <body>. The drawer this renders inside is a Radix
+  // Dialog.Content which carries a transform for its slide animation, and a
+  // transformed ancestor becomes the containing block for `position: fixed`
+  // — so "fullscreen" was being clipped to the ~672px drawer column instead
+  // of filling the viewport.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt}
+      // Read by the drawer's own Escape handler. Both layers listen on the
+      // document in the capture phase, and the drawer registered first, so
+      // stopping propagation from here cannot win the race — the outer layer
+      // has to check whether an inner one is open.
+      data-lightbox=""
+      className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-ink-950/95 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close full screen"
+        className="absolute right-3 top-3 z-10 inline-flex size-9 items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-ink-100 transition-colors hover:bg-ink-800 hover:text-ink-50"
+      >
+        <X className="size-4" aria-hidden />
+      </button>
+
+      <div className="relative flex max-h-full max-w-full items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt} className="max-h-[88vh] w-auto max-w-[92vw] object-contain" />
+        {bbox && <BBoxOverlay bbox={bbox} />}
+      </div>
+
+      <p className="absolute bottom-4 left-1/2 -translate-x-1/2 font-mono text-[10px] text-ink-400">
+        click anywhere or press Esc to close
+      </p>
+    </div>,
+    document.body,
   );
 }

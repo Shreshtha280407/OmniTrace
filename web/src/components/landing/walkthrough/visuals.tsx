@@ -38,7 +38,10 @@ function Frame({ children, className }: { children: React.ReactNode; className?:
       )}
     >
       <div className="grid-field pointer-events-none absolute inset-0 opacity-50" aria-hidden />
-      <div className="relative h-full">{children}</div>
+      {/* Centred rather than top-aligned: the visuals differ in height by a
+          factor of two, and top-aligning them in a fixed-height stage left the
+          shorter ones sitting under a band of empty panel. */}
+      <div className="relative flex h-full flex-col justify-center">{children}</div>
     </div>
   );
 }
@@ -119,9 +122,12 @@ export function AtomicVisual({ active }: VisualProps) {
         {ATOMIC.map((item, i) => {
           const meta = MODALITY_META[item.modality];
           return (
+            // `key` goes before the spread, not after it: with the automatic
+            // JSX runtime a key that follows a spread is not statically
+            // hoisted, and React reports the child as having no key at all.
             <motion.div
-              {...springIn(i, active)}
               key={item.type}
+              {...springIn(i, active)}
               className="rounded-lg border border-ink-600/70 bg-ink-900/50 p-2.5"
             >
               <div className="mb-1.5 flex items-center gap-2">
@@ -322,7 +328,7 @@ export function RetrievalVisual({ active }: VisualProps) {
       <div className="flex h-full flex-col justify-center gap-3.5">
         <div className="space-y-1.5">
           {CHANNELS.map((channel, i) => (
-            <motion.div {...springIn(i, active)} key={channel.name} className="flex items-center gap-2.5">
+            <motion.div key={channel.name} {...springIn(i, active)} className="flex items-center gap-2.5">
               <span className="w-[86px] shrink-0 font-mono text-[10.5px]" style={{ color: channel.color }}>
                 {channel.name}
               </span>

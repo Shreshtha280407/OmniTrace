@@ -190,8 +190,11 @@ export function Walkthrough() {
                     className={cn(
                       "transition-opacity duration-500",
                       // On large screens inactive steps recede; on small ones
-                      // everything stays fully legible.
-                      "lg:opacity-40",
+                      // everything stays fully legible. 40% dropped the body
+                      // copy to roughly 2.5:1 — receding is meant to rank the
+                      // steps, not to make the inactive ones unreadable for
+                      // anyone who scrolls at their own pace.
+                      "lg:opacity-[0.62]",
                       active === i && "lg:opacity-100",
                     )}
                   >
@@ -214,7 +217,12 @@ export function Walkthrough() {
 
             {/* sticky stage — large screens only */}
             <div className="hidden lg:block">
-              <div className="sticky top-24 h-[min(72vh,600px)]">
+              {/* The copy step is 78vh tall and centres its text, so the active
+                  copy always sits on the viewport's midline. Pinning the stage
+                  at a fixed 6rem put its centre ~36vh up from that line, and
+                  the two columns visibly failed to relate to each other. 14vh
+                  + half of 66vh lands the stage centre on 50vh too. */}
+              <div className="sticky top-[14vh] h-[min(66vh,560px)]">
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={STEPS[active].id}

@@ -1,164 +1,114 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, ChevronDown } from "lucide-react";
-import dynamic from "next/dynamic";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
-import { useWebGLSupport } from "@/hooks/useWebGLSupport";
 
-import { HeroFallback } from "./hero/HeroFallback";
+import { HeroProduct } from "./hero/HeroProduct";
 
-// three/fiber never touches the shared bundle — it arrives only for visitors
-// whose device can actually render it.
-const HeroScene = dynamic(() => import("./hero/HeroScene"), { ssr: false });
-
-/** Evidence metadata overlaid on the scene. These are illustrative labels for
- *  the composition, not readings from an API — so they are static, four of
- *  them, and they never animate a changing value. */
-const CAPTIONS = [
-  { text: "video_visual · 02:19.0", tone: "text-modality-visual", pos: "left-[6%] top-[26%]" },
-  { text: "ocr_region · p.07", tone: "text-modality-document", pos: "right-[8%] top-[34%]" },
-  { text: "utterance · 01:44.2", tone: "text-modality-speech", pos: "left-[13%] bottom-[27%]" },
-  { text: "event · confidence 0.91", tone: "text-signal-300", pos: "right-[12%] bottom-[31%]" },
-];
-
+/**
+ * Hero.
+ *
+ * Proportions are taken from the reference set rather than invented: a long
+ * run of quiet space, one large headline, a subtitle held to two lines, two
+ * actions, then the product itself — bleeding off the bottom edge so the page
+ * reads as continuing rather than ending.
+ *
+ * Three things were removed on purpose, because together they were what made
+ * the page read as a template:
+ *
+ *  - The WebGL constellation. Wireframe spheres and floating diamonds are
+ *    decorative geometry; the reference set shows product UI, a soft glow, or
+ *    a single restrained material object, never glowing outlines.
+ *  - The four-column spec table. None of the references put a spec grid in the
+ *    hero — it turns an opening statement into a brochure, and the walkthrough
+ *    below already makes every one of those points properly.
+ *  - The solid mint CTA. The teal is a *data encoding* in this system: it means
+ *    evidence and provenance. Spending it on a marketing button both dilutes
+ *    that meaning and is the loudest thing on the page. The reference set's
+ *    primary CTAs are white, black, or near-black — the accent is never the
+ *    biggest object in the composition.
+ */
 export function Hero() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const scrollProgress = useRef(0);
-  const webgl = useWebGLSupport();
   const reducedMotion = usePrefersReducedMotion();
-  const [scrolled, setScrolled] = useState(false);
-
-  // Scroll is written into a ref and read inside useFrame — driving the scene
-  // through React state would re-render the whole hero on every scroll event.
-  useEffect(() => {
-    const onScroll = () => {
-      const height = sectionRef.current?.offsetHeight ?? window.innerHeight;
-      const progress = Math.min(1, window.scrollY / (height * 0.85));
-      scrollProgress.current = progress;
-      setScrolled(progress > 0.04);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   const fade = reducedMotion
     ? { initial: { opacity: 1, y: 0 }, animate: { opacity: 1, y: 0 } }
-    : { initial: { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 } };
+    : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 
   return (
     <section
-      ref={sectionRef}
-      className="grain relative isolate flex min-h-[100svh] flex-col justify-center overflow-hidden bg-ink-950"
+      className="relative isolate overflow-hidden bg-ink-950 pb-0 pt-28 sm:pt-36"
       aria-labelledby="hero-heading"
     >
-      {/* Scene layer */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="grid-field absolute inset-0 opacity-70" aria-hidden />
-        {webgl === true && <HeroScene scrollProgress={scrollProgress} />}
-        {webgl === false && <HeroFallback />}
-        {/* Vignette + horizon wash: keeps the type legible over the scene and
-            settles the composition into the page below. */}
+      {/* Ambient ground. Two wide, very low-opacity pools plus a hairline grid
+          that fades out before it reaches the type. No moving parts. */}
+      <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
         <div
           className="absolute inset-0"
-          aria-hidden
           style={{
             background:
-              "radial-gradient(120% 78% at 50% 42%, transparent 34%, rgba(6,7,10,0.62) 76%, #06070A 100%)",
+              "radial-gradient(70% 45% at 50% -8%, rgba(25,214,196,0.10), transparent 62%), radial-gradient(50% 38% at 88% 6%, rgba(122,109,201,0.08), transparent 68%)",
           }}
         />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-ink-900 to-transparent" aria-hidden />
+        <div
+          className="grid-field absolute inset-0 opacity-60"
+          style={{ maskImage: "radial-gradient(70% 55% at 50% 0%, #000 20%, transparent 78%)" }}
+        />
+        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-ink-900 to-transparent" />
       </div>
 
-      {/* Caption labels */}
-      <div className="pointer-events-none absolute inset-0 hidden lg:block" aria-hidden>
-        {CAPTIONS.map((caption, i) => (
-          <motion.span
-            key={caption.text}
-            initial={reducedMotion ? { opacity: 0.75 } : { opacity: 0 }}
-            animate={{ opacity: 0.75 }}
-            transition={{ delay: 0.9 + i * 0.16, duration: 0.7 }}
-            className={`absolute ${caption.pos} inline-flex items-center gap-1.5 rounded-sm border border-ink-600/60 bg-ink-900/55 px-2 py-1 font-mono text-[10.5px] tabular backdrop-blur-[2px] ${caption.tone}`}
+      <div className="mx-auto w-full max-w-6xl px-6 sm:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <motion.p {...fade} transition={{ duration: 0.6 }}>
+            <span className="inline-flex items-center gap-2 rounded-full border border-ink-600/80 bg-ink-900/60 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-300 backdrop-blur-sm">
+              <span className="size-1.5 rounded-full bg-signal-500" aria-hidden />
+              Multimodal evidence intelligence
+            </span>
+          </motion.p>
+
+          <motion.h1
+            id="hero-heading"
+            {...fade}
+            transition={{ duration: 0.7, delay: 0.06 }}
+            className="mt-7 text-balance font-display text-display-xl text-ink-50"
           >
-            <span className="size-1 rounded-full bg-current" />
-            {caption.text}
-          </motion.span>
-        ))}
-      </div>
+            Trace every answer back to the evidence.
+          </motion.h1>
 
-      {/* Content */}
-      <div className="relative mx-auto w-full max-w-6xl px-6 pb-24 pt-32 sm:px-8">
-        <motion.p {...fade} transition={{ duration: 0.6 }} className="eyebrow mb-6">
-          Multimodal evidence intelligence
-        </motion.p>
+          <motion.p
+            {...fade}
+            transition={{ duration: 0.7, delay: 0.14 }}
+            className="mx-auto mt-6 max-w-2xl text-pretty text-[1.0625rem] leading-[1.6] text-ink-200"
+          >
+            Video, audio, images and documents become one connected, time-aware body of evidence — so every answer can
+            be opened at the exact frame, page or region it came from.
+          </motion.p>
 
-        <motion.h1
-          id="hero-heading"
-          {...fade}
-          transition={{ duration: 0.7, delay: 0.06 }}
-          className="max-w-4xl text-balance font-display text-display-xl text-ink-50"
-        >
-          Trace every answer back to the evidence.
-        </motion.h1>
+          <motion.div
+            {...fade}
+            transition={{ duration: 0.7, delay: 0.22 }}
+            className="mt-9 flex flex-wrap items-center justify-center gap-3"
+          >
+            <Button asChild size="lg" variant="marketing">
+              <Link href="/workspace">
+                Open workspace
+                <ArrowRight />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <a href="#workflow">Explore the system</a>
+            </Button>
+          </motion.div>
+        </div>
 
-        <motion.p
-          {...fade}
-          transition={{ duration: 0.7, delay: 0.14 }}
-          className="mt-7 max-w-xl text-pretty text-[1.0625rem] leading-[1.65] text-ink-200"
-        >
-          OmniTrace turns video, audio, images, and documents into connected, time-aware evidence — so every AI answer
-          can be inspected, verified, and revisited.
-        </motion.p>
-
-        <motion.div
-          {...fade}
-          transition={{ duration: 0.7, delay: 0.22 }}
-          className="mt-10 flex flex-wrap items-center gap-3"
-        >
-          <Button asChild size="lg" variant="primary">
-            <Link href="/workspace">
-              Open workspace
-              <ArrowRight />
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <a href="#workflow">Explore the system</a>
-          </Button>
-        </motion.div>
-
-        {/* A statement of what the system stores, not a metrics brag. */}
-        <motion.dl
-          {...fade}
-          transition={{ duration: 0.7, delay: 0.32 }}
-          className="mt-16 grid max-w-3xl grid-cols-2 gap-x-8 gap-y-6 border-t border-ink-700/70 pt-8 sm:grid-cols-4"
-        >
-          {[
-            ["Four modalities", "video · audio · image · document"],
-            ["Atomic locators", "timestamp · page · bounding box"],
-            ["Typed relationships", "directed · scored · versioned"],
-            ["Evidence-only answers", "claims cite stored IDs"],
-          ].map(([term, detail]) => (
-            <div key={term}>
-              <dt className="text-ui-xs font-medium text-ink-100">{term}</dt>
-              <dd className="mt-1 font-mono text-[10.5px] leading-relaxed text-ink-400">{detail}</dd>
-            </div>
-          ))}
-        </motion.dl>
-      </div>
-
-      {/* Scroll affordance — disappears the moment scrolling starts. */}
-      <div
-        className={`pointer-events-none absolute inset-x-0 bottom-6 flex justify-center transition-opacity duration-500 ${
-          scrolled ? "opacity-0" : "opacity-100"
-        }`}
-        aria-hidden
-      >
-        <ChevronDown className="size-4 animate-bounce text-ink-400 motion-reduce:animate-none" />
+        {/* The product. Cropped by the section's bottom edge on purpose. */}
+        <div className="mt-16 sm:mt-20">
+          <HeroProduct />
+        </div>
       </div>
     </section>
   );

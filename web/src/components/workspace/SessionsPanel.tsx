@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ChevronsUpDown, Database, MessageSquarePlus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, MessageSquarePlus, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -23,10 +23,8 @@ import { useWorkspace } from "./WorkspaceProvider";
  * be gone on reload.
  */
 export function SessionsPanel({
-  sourceCount,
   onNavigate,
 }: {
-  sourceCount: number | null;
   onNavigate?: () => void;
 }) {
   const {
@@ -37,7 +35,6 @@ export function SessionsPanel({
     deleteSession,
     persistence,
     hydrated,
-    collectionId,
   } = useWorkspace();
 
   const [query, setQuery] = useState("");
@@ -81,7 +78,6 @@ export function SessionsPanel({
           </div>
         </div>
       }
-      footer={<CollectionSwitcher collectionId={collectionId} sourceCount={sourceCount} />}
     >
       {!persistence.healthy && persistence.reason && (
         <div className="m-2 flex items-start gap-2 rounded-md border border-caution-500/30 bg-caution-900/40 p-2.5">
@@ -167,24 +163,3 @@ export function SessionsPanel({
  * deployment (it is a server setting, not a client one), so this shows what is
  * connected rather than offering a switch that cannot work.
  */
-function CollectionSwitcher({ collectionId, sourceCount }: { collectionId: string; sourceCount: number | null }) {
-  return (
-    <div className="flex items-center gap-2 rounded-md border border-ink-600/70 bg-ink-800/60 px-2.5 py-2">
-      <Database className="size-3.5 shrink-0 text-signal-400" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-ui-2xs text-ink-100" title={collectionId}>
-          {collectionId}
-        </p>
-        <p className="text-[10px] text-ink-400">
-          {sourceCount === null ? "source count unavailable" : `${sourceCount} source${sourceCount === 1 ? "" : "s"}`}
-        </p>
-      </div>
-      <DemoBadge />
-      {/* Not a control: the collection is a backend setting, so this signals
-          "configured elsewhere" rather than offering a switch that can't work. */}
-      <span title="Set by COLLECTION_ID on the backend" className="shrink-0">
-        <ChevronsUpDown className="size-3 text-ink-500" aria-hidden />
-      </span>
-    </div>
-  );
-}

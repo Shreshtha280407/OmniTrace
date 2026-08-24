@@ -54,15 +54,26 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def idempotency_key(
-    *, source_sha256: str, stage_name: str, processor_version: str, config_hash: str, schema_version: int
+    *, source_id: str, source_sha256: str, stage_name: str, processor_version: str, config_hash: str,
+    schema_version: int
 ) -> str:
     """Deterministic key for a (source, stage, config) triple.
 
     Re-running the same stage on the same source with the same processor
     version and config reuses the prior run instead of duplicating evidence —
     this is what makes the stage runner safely re-runnable after a crash.
+
+    `source_id` is part of the key, not just the content hash. Keying on bytes
+    alone was indistinguishable from keying on the source while exactly one
+    collection existed, but once uploads are scoped per conversation the two
+    diverge: the same file uploaded into a second conversation is a *different*
+    source that legitimately needs its own evidence rows, and a content-only
+    key made the runner skip every stage as already-done — producing a source
+    with zero evidence and a conversation that silently had nothing to
+    retrieve. Upload-time dedupe by checksum still prevents a genuine duplicate
+    within one collection, which is where that protection belongs.
     """
-    payload = f"{source_sha256}:{stage_name}:{processor_version}:{config_hash}:{schema_version}"
+    payload = f"{source_id}:{source_sha256}:{stage_name}:{processor_version}:{config_hash}:{schema_version}"
     return sha256_bytes(payload.encode())
 
 

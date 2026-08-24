@@ -24,12 +24,17 @@ const config: Config = {
           750: "#12161D", // raised surface
           700: "#171C25", // input / card
           600: "#1E242F", // hairline border (strong)
-          550: "#242B38",
-          500: "#2A3140",
-          400: "#3D4658",
-          300: "#5A6577", // disabled / faint text
-          200: "#8B96A8", // secondary text
-          100: "#C2CAD6", // body text
+          550: "#242B38", // hairline border (hover)
+          // 500 and below carry *text*, so they are tuned to contrast ratios
+          // against the ink-900 ground rather than to even steps of a surface
+          // ramp. The two are different jobs and the old palette conflated
+          // them: text-ink-400 (88 uses) sat at 2.1:1 and text-ink-500 at
+          // 1.5:1, i.e. legible only as a suggestion that text was there.
+          500: "#57616F", // 3.1:1 — decorative marks, "off" dots, disabled
+          400: "#737F92", // 4.9:1 — AA. tertiary text, hints, telemetry
+          300: "#8A96A8", // 6.6:1 — secondary text
+          200: "#A8B3C2", // 9.3:1 — supporting body copy
+          100: "#C8D0DA", // 12.7:1 — body text
           50: "#E8ECF2", // primary text
         },
         // ── primary signal: evidence, provenance, active state ─────────

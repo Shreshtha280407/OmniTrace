@@ -14,6 +14,7 @@ import {
   sortSessions,
   type PersistenceState,
   type Session,
+  type SessionSource,
   type Turn,
 } from "@/lib/sessions";
 
@@ -28,6 +29,9 @@ import {
 
 export interface PendingUpload {
   id: string;
+  /** The investigation this upload belongs to. Uploads are per-conversation:
+   *  a file attached in one chat is not part of another's evidence. */
+  sessionId: string;
   file: File;
   status: "validating" | "uploading" | "processing" | "done" | "failed";
   progress: UploadProgress | null;
@@ -50,6 +54,13 @@ export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // matches MAX_UPLOAD_BYTES s
 export const ACCEPT_ATTRIBUTE = Object.keys(ACCEPTED_EXTENSIONS)
   .map((ext) => `.${ext}`)
   .join(",");
+
+/** The backend's own media_type for a filename, so the file list can show the
+ *  right modality icon without waiting on a round trip. */
+export function mediaTypeOf(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ACCEPTED_EXTENSIONS[ext] ?? "document";
+}
 
 export function validateFile(file: File): string | null {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -84,6 +95,8 @@ interface WorkspaceContextValue {
 
   // uploads
   uploads: PendingUpload[];
+  /** Files ingested into the conversation on screen, newest last. */
+  sessionSources: SessionSource[];
   addFiles: (files: FileList | File[]) => void;
   removeUpload: (id: string) => void;
   retryUpload: (id: string) => void;
@@ -93,6 +106,10 @@ interface WorkspaceContextValue {
   selectEvidence: (id: string | null) => void;
   sourceDrawerEvidenceId: string | null;
   openSourceDrawer: (evidenceId: string) => void;
+  /** Open a whole file, with no particular locator — the files menu's job.
+   *  Distinct from openSourceDrawer, which opens *at* a piece of evidence. */
+  sourceDrawerSourceId: string | null;
+  openSourceFile: (sourceId: string) => void;
   closeSourceDrawer: () => void;
 
   // lookups across the active session's most recent response
@@ -123,6 +140,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [sourceDrawerEvidenceId, setSourceDrawerEvidenceId] = useState<string | null>(null);
+  const [sourceDrawerSourceId, setSourceDrawerSourceId] = useState<string | null>(null);
 
   // ── hydration ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -150,6 +168,29 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [sessions, activeSessionId],
   );
 
+  /** Sessions as of right now, for callbacks that must not re-bind on every
+   *  keystroke (startUpload, runTurn) but still need current state. */
+  const sessionsRef = useRef<Session[]>([]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  /** Uploads belonging to the conversation on screen. The provider keeps one
+   *  list so an in-flight upload survives a session switch, but a chat must
+   *  never show — or cite — a file attached to a different one. */
+  const sessionUploads = useMemo(
+    () => uploads.filter((upload) => upload.sessionId === activeSessionId),
+    [uploads, activeSessionId],
+  );
+
+  /** The collection a given session owns. Falls back to the configured
+   *  default only for a session id that no longer exists. */
+  const collectionIdFor = useCallback(
+    (sessionId: string): string =>
+      sessionsRef.current.find((session) => session.id === sessionId)?.collectionId ?? DEFAULT_COLLECTION_ID,
+    [],
+  );
+
   const latestResponse = useMemo(() => {
     if (!activeSession) return null;
     for (let i = activeSession.turns.length - 1; i >= 0; i -= 1) {
@@ -173,7 +214,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // ── session actions ────────────────────────────────────────────────
   const startSession = useCallback(() => {
-    const session = createSession(DEFAULT_COLLECTION_ID);
+    const session = createSession();
     commit((current) => [session, ...current]);
     setActiveSessionId(session.id);
     setSelectedEvidenceId(null);
@@ -209,7 +250,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ── uploads ────────────────────────────────────────────────────────
-  const startUpload = useCallback((upload: PendingUpload) => {
+  const startUpload = useCallback((upload: PendingUpload, collectionId: string) => {
     const controller = new AbortController();
 
     setUploads((current) =>
@@ -222,6 +263,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
     createSource(upload.file, {
       signal: controller.signal,
+      collectionId,
       onProgress: (progress) =>
         setUploads((current) => current.map((u) => (u.id === upload.id ? { ...u, progress } : u))),
     })
@@ -258,11 +300,30 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
+      // Attaching a file to a blank workspace starts the conversation, the
+      // same way typing into it does — an upload has to belong to some
+      // investigation, because the investigation is what owns the collection
+      // the file is ingested into.
+      let sessionId = activeSessionId;
+      let collectionId: string;
+      if (!sessionId) {
+        const session = createSession();
+        sessionId = session.id;
+        collectionId = session.collectionId;
+        sessionsRef.current = [session, ...sessionsRef.current];
+        setActiveSessionId(session.id);
+        commit((current) => [session, ...current]);
+      } else {
+        collectionId = collectionIdFor(sessionId);
+      }
+
+      const owningSessionId = sessionId;
       const list = Array.from(files);
       const created: PendingUpload[] = list.map((file) => {
         const problem = validateFile(file);
         return {
           id: newId("upl"),
+          sessionId: owningSessionId,
           file,
           // Validation happens before a single byte leaves the browser.
           status: problem ? "failed" : "validating",
@@ -272,9 +333,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       });
 
       setUploads((current) => [...current, ...created]);
-      created.filter((upload) => upload.status === "validating").forEach(startUpload);
+      created
+        .filter((upload) => upload.status === "validating")
+        .forEach((upload) => startUpload(upload, collectionId));
     },
-    [startUpload],
+    [activeSessionId, collectionIdFor, commit, startUpload],
   );
 
   const removeUpload = useCallback((id: string) => {
@@ -293,9 +356,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setUploads((current) => current.map((u) => (u.id === id ? { ...u, status: "failed", error: problem } : u)));
         return;
       }
-      startUpload(upload);
+      startUpload(upload, collectionIdFor(upload.sessionId));
     },
-    [uploads, startUpload],
+    [uploads, collectionIdFor, startUpload],
   );
 
   // ── query ──────────────────────────────────────────────────────────
@@ -309,7 +372,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       try {
         const response = await runQuery(
           {
-            collection_id: DEFAULT_COLLECTION_ID,
+            collection_id: collectionIdFor(sessionId),
             question: turn.question,
             required_modalities: turn.requiredModalities,
             debug_trace: turn.debugTrace,
@@ -372,7 +435,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setActiveTurnId(null);
       }
     },
-    [commit],
+    [collectionIdFor, commit],
   );
 
   const submitQuery = useCallback(
@@ -393,8 +456,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       let sessionId = activeSessionId;
       const isNew = !sessionId;
       if (!sessionId) {
-        const session = createSession(DEFAULT_COLLECTION_ID);
+        const session = createSession();
         sessionId = session.id;
+        // Seed the ref synchronously: runTurn resolves the collection through
+        // collectionIdFor below, and the commit() above only lands on the next
+        // render — without this the very first question of a new conversation
+        // would be sent against the shared default collection.
+        sessionsRef.current = [session, ...sessionsRef.current];
         setActiveSessionId(session.id);
         commit((current) => [session, ...current]);
       }
@@ -405,8 +473,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         requiredModalities,
         debugTrace,
         askedAt: Date.now(),
-        jobIds: uploads.filter((u) => u.jobId).map((u) => u.jobId!),
+        jobIds: uploads.filter((u) => u.sessionId === sessionId && u.jobId).map((u) => u.jobId!),
       };
+
+      // Files join the conversation when the question is asked, not when the
+      // bytes finish uploading. Attaching a file is not yet part of the
+      // conversation — it is something staged in the composer, and it can
+      // still be removed there. Recording it on upload made it appear in the
+      // files menu before the user had committed to anything.
+      const attached = uploads
+        .filter((u) => u.sessionId === sessionId && u.sourceId)
+        .map((u) => ({
+          sourceId: u.sourceId!,
+          filename: u.file.name,
+          mediaType: mediaTypeOf(u.file.name),
+        }));
 
       commit((current) =>
         current.map((session) =>
@@ -416,6 +497,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
                 title: isNew || session.turns.length === 0 ? deriveTitle(trimmed) : session.title,
                 updatedAt: Date.now(),
                 turns: [...session.turns, turn],
+                sources: [
+                  ...(session.sources ?? []).filter(
+                    (existing) => !attached.some((a) => a.sourceId === existing.sourceId),
+                  ),
+                  ...attached,
+                ],
               }
             : session,
         ),
@@ -448,8 +535,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // ── inspector ──────────────────────────────────────────────────────
   const selectEvidence = useCallback((id: string | null) => setSelectedEvidenceId(id), []);
-  const openSourceDrawer = useCallback((evidenceId: string) => setSourceDrawerEvidenceId(evidenceId), []);
-  const closeSourceDrawer = useCallback(() => setSourceDrawerEvidenceId(null), []);
+  const openSourceDrawer = useCallback((evidenceId: string) => {
+    setSourceDrawerSourceId(null);
+    setSourceDrawerEvidenceId(evidenceId);
+  }, []);
+  const openSourceFile = useCallback((sourceId: string) => {
+    setSourceDrawerEvidenceId(null);
+    setSourceDrawerSourceId(sourceId);
+  }, []);
+  const closeSourceDrawer = useCallback(() => {
+    setSourceDrawerEvidenceId(null);
+    setSourceDrawerSourceId(null);
+  }, []);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -467,7 +564,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       retryTurn,
       isQuerying,
       activeTurnId,
-      uploads,
+      uploads: sessionUploads,
+      sessionSources: activeSession?.sources ?? [],
       addFiles,
       removeUpload,
       retryUpload,
@@ -475,16 +573,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       selectEvidence,
       sourceDrawerEvidenceId,
       openSourceDrawer,
+      sourceDrawerSourceId,
+      openSourceFile,
       closeSourceDrawer,
       latestResponse,
       evidenceById,
-      collectionId: DEFAULT_COLLECTION_ID,
+      collectionId: activeSession?.collectionId ?? DEFAULT_COLLECTION_ID,
     }),
     [
       sessions, activeSession, activeSessionId, persistence, hydrated, selectSession, startSession,
       deleteSession, renameSession, submitQuery, cancelQuery, retryTurn, isQuerying, activeTurnId,
-      uploads, addFiles, removeUpload, retryUpload, selectedEvidenceId, selectEvidence,
-      sourceDrawerEvidenceId, openSourceDrawer, closeSourceDrawer, latestResponse, evidenceById,
+      sessionUploads, addFiles, removeUpload, retryUpload, selectedEvidenceId, selectEvidence,
+      sourceDrawerEvidenceId, openSourceDrawer, sourceDrawerSourceId, openSourceFile,
+      closeSourceDrawer, latestResponse, evidenceById,
     ],
   );
 

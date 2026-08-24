@@ -12,7 +12,7 @@ import { FieldRow, PanelSection } from "@/components/ui/PanelShell";
 import { SkeletonText } from "@/components/ui/Skeleton";
 import { SourceLocator } from "@/components/ui/SourceLocator";
 import { StatusPill, sourceStatusLabel, sourceStatusTone } from "@/components/ui/StatusPill";
-import { useEvidenceSource } from "@/lib/api/queries";
+import { useEvidenceSource, useSource } from "@/lib/api/queries";
 import { formatBytes, formatChecksum, formatDuration, truncateId } from "@/lib/format";
 import { evidenceTypeLabel } from "@/lib/modality";
 
@@ -22,26 +22,37 @@ import { useWorkspace } from "./WorkspaceProvider";
 /**
  * Source drawer.
  *
- * Opened by **View source** on an evidence card. Resolves the evidence to its
- * originating Source through `GET /api/v1/evidence/{id}/source` — the backend's
- * own provenance-reachability path — and then opens it at the stored locator.
+ * Two ways in, and the difference matters:
+ *
+ *  - **View source** on an answer opens a specific piece of evidence. The
+ *    evidence resolves to its Source through `GET /api/v1/evidence/{id}/source`
+ *    — the backend's own provenance-reachability path — and the file opens *at
+ *    the stored locator*, with the citation's own content and producer chain
+ *    alongside it.
+ *  - The **files menu** opens a whole file the conversation holds. There is no
+ *    citation involved, so there is no locator to honour and no cited content
+ *    to quote; the file simply opens at its start.
  */
 export function SourceDrawer() {
-  const { sourceDrawerEvidenceId, closeSourceDrawer, evidenceById } = useWorkspace();
+  const { sourceDrawerEvidenceId, sourceDrawerSourceId, closeSourceDrawer, evidenceById } = useWorkspace();
   const evidence = sourceDrawerEvidenceId ? evidenceById[sourceDrawerEvidenceId] : undefined;
-  const source = useEvidenceSource(sourceDrawerEvidenceId);
+  const viaEvidence = useEvidenceSource(sourceDrawerEvidenceId);
+  const viaFile = useSource(sourceDrawerSourceId);
+  const source = sourceDrawerSourceId ? viaFile : viaEvidence;
 
-  const open = Boolean(sourceDrawerEvidenceId);
+  const open = Boolean(sourceDrawerEvidenceId || sourceDrawerSourceId);
 
   // Radix handles Escape, but the workspace also binds Escape globally; this
   // keeps the two in agreement about what "close the top-most panel" means.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        closeSourceDrawer();
-      }
+      if (e.key !== "Escape") return;
+      // A fullscreen image is layered above this drawer. Escape belongs to the
+      // innermost layer, and one press must not collapse both.
+      if (document.querySelector("[data-lightbox]")) return;
+      e.stopPropagation();
+      closeSourceDrawer();
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
@@ -54,9 +65,17 @@ export function SourceDrawer() {
         <Dialog.Content
           className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-ink-850 shadow-drawer duration-300 data-[state=open]:animate-fade-in"
           aria-describedby={undefined}
+          // Radix dismisses this dialog on Escape itself, independently of the
+          // listener above. When a fullscreen image is layered on top, that
+          // key belongs to the image — one press should peel off one layer.
+          onEscapeKeyDown={(event) => {
+            if (document.querySelector("[data-lightbox]")) event.preventDefault();
+          }}
         >
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-ink-600 px-4">
-            <Dialog.Title className="text-ui-sm font-medium text-ink-50">Source</Dialog.Title>
+            <Dialog.Title className="text-ui-sm font-medium text-ink-50">
+              {sourceDrawerSourceId ? "File" : "Source"}
+            </Dialog.Title>
             {evidence && <ModalityBadge modality={evidence.modality} />}
             <Dialog.Close asChild>
               <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="Close source">
@@ -66,7 +85,7 @@ export function SourceDrawer() {
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {!evidence ? (
+            {!evidence && !sourceDrawerSourceId ? (
               <ErrorState
                 compact
                 error={new Error("This evidence item is not in the current bundle, so its source cannot be resolved.")}
@@ -92,19 +111,23 @@ export function SourceDrawer() {
                 </div>
 
                 <div className="divide-y divide-ink-600/50 border-t border-ink-600/70">
-                  <PanelSection title="Locator">
-                    <SourceLocator location={evidence.location} variant="block" />
-                  </PanelSection>
+                  {evidence && (
+                    <PanelSection title="Locator">
+                      <SourceLocator location={evidence.location} variant="block" />
+                    </PanelSection>
+                  )}
 
-                  <PanelSection title="Cited content">
-                    <blockquote className="rounded-md border-l-2 border-signal-600/50 bg-ink-900/60 py-2 pl-2.5 pr-2 text-pretty text-ui-xs leading-relaxed text-ink-100">
-                      {evidence.content || <span className="text-ink-400">No content stored.</span>}
-                    </blockquote>
-                    <p className="mt-2 text-ui-2xs text-ink-400">
-                      {evidenceTypeLabel(evidence.evidence_type)}
-                      {evidence.speaker_id && ` · ${evidence.speaker_id}`}
-                    </p>
-                  </PanelSection>
+                  {evidence && (
+                    <PanelSection title="Cited content">
+                      <blockquote className="rounded-md border-l-2 border-signal-600/50 bg-ink-900/60 py-2 pl-2.5 pr-2 text-pretty text-ui-xs leading-relaxed text-ink-100">
+                        {evidence.content || <span className="text-ink-400">No content stored.</span>}
+                      </blockquote>
+                      <p className="mt-2 text-ui-2xs text-ink-400">
+                        {evidenceTypeLabel(evidence.evidence_type)}
+                        {evidence.speaker_id && ` · ${evidence.speaker_id}`}
+                      </p>
+                    </PanelSection>
+                  )}
 
                   <PanelSection
                     title="Source record"
@@ -157,7 +180,7 @@ export function SourceDrawer() {
                     </dl>
                   </PanelSection>
 
-                  {evidence.provenance && (
+                  {evidence?.provenance && (
                     <PanelSection title="Producer chain">
                       <dl>
                         <FieldRow label="Producer" mono>

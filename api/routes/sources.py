@@ -19,7 +19,7 @@ import mimetypes
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from omnitrace.assets import get_asset_store
@@ -53,13 +53,28 @@ class SourceCreateResponse(BaseModel):
 
 
 @router.post("/sources", response_model=SourceCreateResponse, status_code=201)
-async def create_source(file: UploadFile = File(...)) -> SourceCreateResponse:
+async def create_source(
+    file: UploadFile = File(...),
+    collection_id: str | None = Form(None),
+) -> SourceCreateResponse:
+    """Ingest one file into `collection_id`, falling back to the configured
+    default when the caller does not name one.
+
+    The parameter exists so a caller can keep separate bodies of evidence
+    apart. Without it every upload landed in the single collection named by
+    the environment, which meant two unrelated investigations shared one
+    corpus: a question asked in a brand-new conversation retrieved evidence
+    uploaded by a different one. The default is preserved so existing
+    scripted callers (scripts/demo.py, the curl flow in test_data/README.md)
+    behave exactly as before.
+    """
     ext = Path(file.filename or "").suffix.lower()
     media_type = _EXT_MEDIA_TYPE.get(ext)
     if media_type is None:
         raise HTTPException(400, f"unsupported file extension: {ext!r}")
 
     settings = get_settings()
+    target_collection_id = collection_id or settings.collection_id
 
     # Stream to a temp file so we can hash the whole upload without trusting
     # a client-supplied Content-Length, and without holding a multi-hundred-
@@ -83,7 +98,7 @@ async def create_source(file: UploadFile = File(...)) -> SourceCreateResponse:
 
         # Idempotency: identical bytes already ingested into this collection
         # reuse the existing source rather than duplicating it.
-        existing = await coll(SOURCES).find_one({"collection_id": settings.collection_id, "sha256": checksum})
+        existing = await coll(SOURCES).find_one({"collection_id": target_collection_id, "sha256": checksum})
         if existing is not None:
             return SourceCreateResponse(
                 source_id=existing["_id"], job_id=existing["_id"], checksum=checksum, status=existing["status"]
@@ -99,7 +114,7 @@ async def create_source(file: UploadFile = File(...)) -> SourceCreateResponse:
 
         source = Source(
             _id=source_id,
-            collection_id=settings.collection_id,
+            collection_id=target_collection_id,
             filename=file.filename or source_id,
             media_type=media_type,
             mime_type=mime_type,

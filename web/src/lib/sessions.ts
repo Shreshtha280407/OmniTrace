@@ -27,10 +27,22 @@ export interface Turn {
   jobIds?: string[];
 }
 
+/** A file ingested into this conversation. Recorded on the session because
+ *  in-flight upload state is React state and does not survive a reload, while
+ *  the file itself remains part of the conversation's evidence forever. */
+export interface SessionSource {
+  sourceId: string;
+  filename: string;
+  mediaType: string;
+}
+
 export interface Session {
   id: string;
   title: string;
   collectionId: string;
+  /** Optional for backward compatibility with sessions stored before files
+   *  were tracked per conversation. */
+  sources?: SessionSource[];
   createdAt: number;
   updatedAt: number;
   turns: Turn[];
@@ -63,12 +75,26 @@ export function deriveTitle(question: string): string {
   return line.length > 64 ? `${line.slice(0, 61)}…` : line;
 }
 
-export function createSession(collectionId: string): Session {
+/**
+ * A new investigation owns a brand-new collection.
+ *
+ * Previously every session was created against one shared collection id from
+ * the environment, so sources uploaded in one conversation were retrievable
+ * from every other one — asking a question in a fresh conversation returned
+ * evidence and citations from somebody else's upload. Minting the id here
+ * makes isolation a property of the session object itself rather than
+ * something each call site has to remember to arrange.
+ *
+ * `collectionId` is passed explicitly only when rehydrating or when a caller
+ * deliberately wants two sessions to share a corpus.
+ */
+export function createSession(collectionId?: string): Session {
   const now = Date.now();
+  const id = newId("inv");
   return {
-    id: newId("inv"),
+    id,
     title: "New investigation",
-    collectionId,
+    collectionId: collectionId ?? `col_${id.slice("inv_".length)}`,
     createdAt: now,
     updatedAt: now,
     turns: [],
