@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowLeft, GitBranch, Maximize2, Network, Radar, Route, Share2, X } from "lucide-react";
-import dynamic from "next/dynamic";
+import { ArrowLeft, GitBranch, Network, Radar, Route, Share2, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { DemoBadge } from "@/components/ui/DemoBadge";
@@ -13,19 +12,26 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PanelShell } from "@/components/ui/PanelShell";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { useEvent } from "@/lib/api/queries";
-import { useWebGLSupport } from "@/hooks/useWebGLSupport";
 import type { Relationship } from "@/lib/api/schemas";
 import { cn } from "@/lib/utils";
 
 import { DEFAULT_FILTERS, GraphContextRail, type GraphFilters } from "./GraphContext";
-import { GraphFallback } from "./GraphFallback";
+import { GraphBoxes } from "./GraphBoxes";
+import { SchemaGraph } from "./SchemaGraph";
 import { NodeInspector } from "./NodeInspector";
 import { TimelineScrubber } from "./TimelineScrubber";
 import { QueryTrace } from "@/components/workspace/QueryTracePanel";
 
-import { buildGraph, computeStats, settleLayout, type GraphData } from "./model";
-
-const GraphCanvas = dynamic(() => import("./GraphCanvas"), { ssr: false });
+import {
+  buildGraph,
+  buildSchemaGraph,
+  computeStats,
+  KIND_COLOR,
+  KIND_LABEL,
+  settleLayout,
+  type GraphData,
+  type NodeKind,
+} from "./model";
 
 export type GraphMode = "explore" | "query_path" | "lineage";
 
@@ -52,9 +58,9 @@ export function GraphExplorer() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [pathIds, setPathIds] = useState<string[] | null>(null);
-  const [resetSignal, setResetSignal] = useState(0);
   const [railOpen, setRailOpen] = useState(false);
-  const webgl = useWebGLSupport();
+  // Which of the five schema nodes is opened into its members, if any.
+  const [selectedKind, setSelectedKind] = useState<NodeKind | null>(null);
 
   const evidence = useMemo(() => latestResponse?.evidence ?? [], [latestResponse]);
   const relationships = useMemo(() => latestResponse?.relationships ?? [], [latestResponse]);
@@ -62,10 +68,7 @@ export function GraphExplorer() {
   // Seeds are the items the reranker scored; expansion-only items arrive with
   // score 0 from the query route, which is exactly the distinction the
   // query-path view needs.
-  const seedIds = useMemo(
-    () => new Set(evidence.filter((e) => (e.score ?? 0) > 0).map((e) => e._id)),
-    [evidence],
-  );
+  const seedIds = useMemo(() => new Set(evidence.filter((e) => (e.score ?? 0) > 0).map((e) => e._id)), [evidence]);
 
   const graph = useMemo<GraphData>(() => {
     const built = buildGraph({
@@ -144,9 +147,7 @@ export function GraphExplorer() {
   const buildQueryPath = useCallback(
     (targetId?: string) => {
       const path: string[] = [];
-      const bestSeed = graph.nodes
-        .filter((n) => n.seed)
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+      const bestSeed = graph.nodes.filter((n) => n.seed).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
       if (bestSeed) path.push(bestSeed.id);
       if (eventQuery.data && graph.nodesById.has(eventQuery.data._id)) path.push(eventQuery.data._id);
 
@@ -191,14 +192,31 @@ export function GraphExplorer() {
     return relationships.filter((r) => r.from_id === selectedId || r.to_id === selectedId);
   }, [relationships, selectedId]);
 
-  const focusSubgraph = useCallback(
-    (id: string) => {
-      const neighbourhood = new Set<string>([id]);
-      graph.neighbours.get(id)?.forEach((n) => neighbourhood.add(n));
-      setSelectedId(id);
-    },
-    [graph],
-  );
+  // ── the five-node view ────────────────────────────────────────────
+  // Built from the filtered set, so tightening a filter visibly removes the
+  // relationships that no longer have both endpoints — the edges re-form.
+  const schema = useMemo(() => buildSchemaGraph(graph, visibleIds), [graph, visibleIds]);
+
+  /** The query path collapsed to kinds, in first-visit order, for numbering
+   *  the schema nodes it passes through. */
+  const pathKinds = useMemo(() => {
+    if (mode !== "query_path" || !pathIds) return null;
+    const seen: NodeKind[] = [];
+    pathIds.forEach((id) => {
+      const kind = graph.nodesById.get(id)?.kind;
+      if (kind && !seen.includes(kind)) seen.push(kind);
+    });
+    return seen.length > 0 ? seen : null;
+  }, [mode, pathIds, graph]);
+
+  // A kind that stops having members — after a filter change, or because
+  // lineage mode was left and the source nodes went with it — must not stay
+  // open showing an empty grid.
+  useEffect(() => {
+    if (!selectedKind) return;
+    const node = schema.nodes.find((n) => n.kind === selectedKind);
+    if (!node || node.count === 0) setSelectedKind(null);
+  }, [schema, selectedKind]);
 
   // ── empty / error states ──────────────────────────────────────────
   const hasGraph = graph.nodes.length > 0;
@@ -270,7 +288,11 @@ export function GraphExplorer() {
             <Network />
           </Button>
 
-          <div className="flex items-center gap-1 rounded-md border border-ink-600 p-0.5" role="group" aria-label="Graph mode">
+          <div
+            className="flex items-center gap-1 rounded-md border border-ink-600 p-0.5"
+            role="group"
+            aria-label="Graph mode"
+          >
             {(
               [
                 ["explore", "Explore", Network],
@@ -315,115 +337,147 @@ export function GraphExplorer() {
           </button>
 
           <p className="hidden text-ui-2xs text-ink-400 md:block">
-            {mode === "explore" && "Drag to orbit · scroll to zoom · click to select · double-click to focus"}
+            {mode === "explore" && "Five node kinds; edges form per query. Click a node to see its items"}
             {mode === "query_path" && "query → seed result → event → expansion → parent proof"}
             {mode === "lineage" && "raw source → derived evidence → event"}
           </p>
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button size="xs" variant="ghost" onClick={() => setResetSignal((n) => n + 1)}>
-              <Maximize2 />
-              Reset camera
-            </Button>
-          </div>
         </div>
 
         <div className="flex min-h-0 flex-1">
-        {/* canvas surface */}
-        <div className="relative min-h-0 flex-1">
-          <div className="grid-field absolute inset-0 opacity-40" aria-hidden />
+          {/* canvas surface */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div className="grid-field absolute inset-0 opacity-40" aria-hidden />
 
-          {!hasGraph ? (
-            <EmptyState
-              icon={Share2}
-              title="No graph to draw"
-              description={
-                eventId
-                  ? "The event loaded, but this workspace holds no evidence bundle to place around it. Run a query in the workspace first — the graph is built from the evidence and relationships that query returns."
-                  : "Run a query in the workspace first. The graph is built from the evidence bundle and relationships the query returns, plus the event it reached."
-              }
-              action={{ label: "Go to workspace", onClick: () => (window.location.href = "/workspace") }}
-            />
-          ) : webgl === false ? (
-            <GraphFallback graph={graph} visibleIds={visibleIds} selectedId={selectedId} onSelect={setSelectedId} />
-          ) : webgl === true ? (
-            <GraphCanvas
-              graph={graph}
-              selectedId={selectedId}
-              hoveredId={hoveredId}
-              visibleIds={visibleIds}
-              pathIds={mode === "query_path" ? pathIds : null}
-              onSelect={setSelectedId}
-              onHover={setHoveredId}
-              onFocusSubgraph={focusSubgraph}
-              resetSignal={resetSignal}
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="skeleton size-40 rounded-full" aria-hidden />
-              <span className="sr-only">Preparing graph</span>
-            </div>
-          )}
-
-          {/* path legend, only while the mode is active */}
-          {mode === "query_path" && hasGraph && (
-            <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-ink-600/70 bg-ink-850/90 p-2.5 backdrop-blur">
-              <p className="eyebrow mb-1.5">Query path</p>
-              {pathIds ? (
-                <ol className="space-y-0.5">
-                  {["seed result", "semantic event", "expanded evidence", "parent proof"]
-                    .slice(0, pathIds.length)
-                    .map((label, i) => (
-                      <li key={label} className="flex items-center gap-2 font-mono text-[10px] text-ink-200">
-                        <span className="text-signal-400">{i + 1}</span>
-                        {label}
-                      </li>
-                    ))}
-                </ol>
-              ) : (
-                <p className="max-w-[16rem] text-[10.5px] leading-relaxed text-ink-400">
-                  No path available — this query produced no scored seed, or no event was reached by expansion.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* timeline */}
-          {hasGraph && (
-            <div className="pointer-events-auto absolute inset-x-3 bottom-3 lg:left-auto lg:right-3 lg:w-[26rem]">
-              <TimelineScrubber
-                nodes={graph.nodes.filter((n) => n.kind === "observation" || n.kind === "segment")}
-                range={stats.timeRange}
-                window={filters.timeWindow}
-                onWindowChange={(timeWindow) => setFilters((f) => ({ ...f, timeWindow }))}
-                includeUntimed={filters.includeUntimed}
-                onIncludeUntimedChange={(includeUntimed) => setFilters((f) => ({ ...f, includeUntimed }))}
+            {!hasGraph ? (
+              <EmptyState
+                icon={Share2}
+                title="No graph to draw"
+                description={
+                  eventId
+                    ? "The event loaded, but this workspace holds no evidence bundle to place around it. Run a query in the workspace first — the graph is built from the evidence and relationships that query returns."
+                    : "Run a query in the workspace first. The graph is built from the evidence bundle and relationships the query returns, plus the event it reached."
+                }
+                action={{
+                  label: "Go to workspace",
+                  onClick: () => (window.location.href = "/workspace"),
+                }}
               />
-            </div>
-          )}
-        </div>
+            ) : (
+              <>
+                {/* The five nodes. Fixed frame, dynamic edges. */}
+                <div className="relative min-h-0 flex-1">
+                  <SchemaGraph
+                    schema={schema}
+                    selectedKind={selectedKind}
+                    onSelectKind={setSelectedKind}
+                    pathKinds={pathKinds}
+                    className="absolute inset-0"
+                  />
 
-        {/* ── query trace ──────────────────────────────────────── */}
-        {traceOpen && (
-          <aside
-            className="hidden w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-ink-600/70 bg-ink-850/60 lg:flex"
-            aria-label="Query trace"
-          >
-            <div className="sticky top-0 z-10 flex h-11 shrink-0 items-center gap-2 border-b border-ink-600/70 bg-ink-850 px-3">
-              <h2 className="text-ui-sm font-medium text-ink-50">Query trace</h2>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="ml-auto"
-                onClick={() => setTraceOpen(false)}
-                aria-label="Close query trace"
-              >
-                <X />
-              </Button>
-            </div>
-            <QueryTrace />
-          </aside>
-        )}
+                  {/* path legend, only while the mode is active */}
+                  {mode === "query_path" && (
+                    <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-ink-600/70 bg-ink-850/90 p-2.5 backdrop-blur">
+                      <p className="eyebrow mb-1.5">Query path</p>
+                      {pathIds ? (
+                        <ol className="space-y-0.5">
+                          {["seed result", "semantic event", "expanded evidence", "parent proof"]
+                            .slice(0, pathIds.length)
+                            .map((label, i) => (
+                              <li key={label} className="flex items-center gap-2 font-mono text-[10px] text-ink-200">
+                                <span className="text-signal-400">{i + 1}</span>
+                                {label}
+                              </li>
+                            ))}
+                        </ol>
+                      ) : (
+                        <p className="max-w-[16rem] text-[10.5px] leading-relaxed text-ink-400">
+                          No path available — this query produced no scored seed, or no event was reached by
+                          expansion.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Timeline. In normal flow rather than floating over the graph:
+                    the pentagon sizes itself to whatever height is left, so an
+                    overlay here sat on top of the two bottom nodes as soon as
+                    the members panel claimed part of the column. */}
+                <div className="shrink-0 px-3 pb-3 lg:flex lg:justify-end">
+                  <div className="lg:w-[26rem]">
+                    <TimelineScrubber
+                      nodes={graph.nodes.filter((n) => n.kind === "observation" || n.kind === "segment")}
+                      range={stats.timeRange}
+                      window={filters.timeWindow}
+                      onWindowChange={(timeWindow) => setFilters((f) => ({ ...f, timeWindow }))}
+                      includeUntimed={filters.includeUntimed}
+                      onIncludeUntimedChange={(includeUntimed) => setFilters((f) => ({ ...f, includeUntimed }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Drill-down: the items behind one node, opened by clicking it.
+                  A panel in normal flow rather than an overlay, so it never
+                  covers the edges the reader just watched form. */}
+                {selectedKind && (
+                  <div className="flex max-h-[46%] min-h-[13rem] shrink-0 flex-col border-t border-ink-600/70 bg-ink-850/80">
+                    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-ink-600/50 px-3">
+                      <span
+                        aria-hidden
+                        className="size-1.5 shrink-0 rounded-full"
+                        style={{ background: KIND_COLOR[selectedKind] }}
+                      />
+                      <h2 className="text-ui-xs font-medium text-ink-50">{KIND_LABEL[selectedKind]}</h2>
+                      <span className="font-mono text-[10px] tabular text-ink-400">
+                        {schema.nodes.find((n) => n.kind === selectedKind)?.count ?? 0} shown
+                      </span>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="ml-auto"
+                        onClick={() => setSelectedKind(null)}
+                        aria-label={`Close ${KIND_LABEL[selectedKind]} members`}
+                      >
+                        <X />
+                      </Button>
+                    </div>
+                    <GraphBoxes
+                      graph={graph}
+                      visibleIds={visibleIds}
+                      selectedId={selectedId}
+                      filterKind={selectedKind}
+                      pathIds={mode === "query_path" ? pathIds : null}
+                      onSelect={setSelectedId}
+                      onHover={setHoveredId}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ── query trace ──────────────────────────────────────── */}
+          {traceOpen && (
+            <aside
+              className="hidden w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-ink-600/70 bg-ink-850/60 lg:flex"
+              aria-label="Query trace"
+            >
+              <div className="sticky top-0 z-10 flex h-11 shrink-0 items-center gap-2 border-b border-ink-600/70 bg-ink-850 px-3">
+                <h2 className="text-ui-sm font-medium text-ink-50">Query trace</h2>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  onClick={() => setTraceOpen(false)}
+                  aria-label="Close query trace"
+                >
+                  <X />
+                </Button>
+              </div>
+              <QueryTrace />
+            </aside>
+          )}
         </div>
       </section>
 

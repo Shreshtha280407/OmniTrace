@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { buildGraph, computeStats, nodeRadius, settleLayout } from "@/components/graph/model";
+import {
+  buildGraph,
+  buildSchemaGraph,
+  computeStats,
+  nodeRadius,
+  SCHEMA_KIND_ORDER,
+  settleLayout,
+} from "@/components/graph/model";
 import type { EvidenceItem, Relationship, SemanticEvent } from "@/lib/api/schemas";
 
 function ev(id: string, over: Partial<EvidenceItem> = {}): EvidenceItem {
@@ -205,5 +212,133 @@ describe("settleLayout", () => {
       expect(Number.isFinite(n.y)).toBe(true);
       expect(Number.isFinite(n.z)).toBe(true);
     });
+  });
+});
+
+describe("buildSchemaGraph", () => {
+  it("always returns the same five nodes, in ring order, even when empty", () => {
+    // The five kinds are the schema, not a summary of one query's results: a
+    // kind with nothing in it still has to appear, or the frame moves between
+    // queries and the reader has to re-find the nodes each time.
+    const schema = buildSchemaGraph(buildGraph({ evidence: [], relationships: [] }));
+    expect(schema.nodes.map((n) => n.kind)).toEqual(SCHEMA_KIND_ORDER);
+    expect(schema.nodes.every((n) => n.count === 0)).toBe(true);
+    expect(schema.edges).toHaveLength(0);
+  });
+
+  it("counts members per kind", () => {
+    const schema = buildSchemaGraph(
+      buildGraph({
+        evidence: [ev("ev_1"), ev("ev_2"), ev("ev_3", { node_type: "semantic_segment" })],
+        relationships: [],
+      }),
+    );
+    expect(schema.nodes.find((n) => n.kind === "observation")?.count).toBe(2);
+    expect(schema.nodes.find((n) => n.kind === "segment")?.count).toBe(1);
+    expect(schema.nodes.find((n) => n.kind === "entity")?.count).toBe(0);
+  });
+
+  it("collapses many item-level relationships into one edge per kind pair", () => {
+    // This is the whole reason the view exists: three observation-to-segment
+    // links are one legible arc, not three lines in a hairball.
+    const schema = buildSchemaGraph(
+      buildGraph({
+        evidence: [
+          ev("ev_1"),
+          ev("ev_2"),
+          ev("ev_3"),
+          ev("seg_1", { node_type: "semantic_segment" }),
+        ],
+        relationships: [
+          rel("r1", "ev_1", "seg_1"),
+          rel("r2", "ev_2", "seg_1"),
+          rel("r3", "ev_3", "seg_1"),
+        ],
+      }),
+    );
+    expect(schema.edges).toHaveLength(1);
+    expect(schema.edges[0]).toMatchObject({
+      from: "observation",
+      to: "segment",
+      count: 3,
+      confirmed: 3,
+      dominantType: "EXPLAINS",
+    });
+  });
+
+  it("keeps a relationship between two items of the same kind as a self-edge", () => {
+    const schema = buildSchemaGraph(
+      buildGraph({ evidence: [ev("ev_1"), ev("ev_2")], relationships: [rel("r1", "ev_1", "ev_2")] }),
+    );
+    expect(schema.edges).toHaveLength(1);
+    expect(schema.edges[0].from).toBe("observation");
+    expect(schema.edges[0].to).toBe("observation");
+  });
+
+  it("is tentative only when tentative links outnumber confirmed ones", () => {
+    const base = [ev("ev_1"), ev("ev_2"), ev("seg_1", { node_type: "semantic_segment" })];
+    const tentative = buildSchemaGraph(
+      buildGraph({
+        evidence: base,
+        relationships: [
+          rel("r1", "ev_1", "seg_1", { status: "tentative" }),
+          rel("r2", "ev_2", "seg_1", { status: "tentative" }),
+        ],
+      }),
+    );
+    expect(tentative.edges[0].status).toBe("tentative");
+    expect(tentative.edges[0].tentative).toBe(2);
+
+    const mixed = buildSchemaGraph(
+      buildGraph({
+        evidence: base,
+        relationships: [
+          rel("r1", "ev_1", "seg_1", { status: "tentative" }),
+          rel("r2", "ev_2", "seg_1", { status: "confirmed" }),
+        ],
+      }),
+    );
+    expect(mixed.edges[0].status).toBe("confirmed");
+  });
+
+  it("never draws a rejected relationship", () => {
+    // A rejected link is a decision *against* the connection; drawing it would
+    // state the opposite of what the linker concluded.
+    const schema = buildSchemaGraph(
+      buildGraph({
+        evidence: [ev("ev_1"), ev("seg_1", { node_type: "semantic_segment" })],
+        relationships: [rel("r1", "ev_1", "seg_1", { status: "rejected" })],
+      }),
+    );
+    expect(schema.edges).toHaveLength(0);
+  });
+
+  it("drops an edge once either endpoint is filtered out, and reports the shortfall", () => {
+    const graph = buildGraph({
+      evidence: [ev("ev_1"), ev("ev_2"), ev("seg_1", { node_type: "semantic_segment" })],
+      relationships: [rel("r1", "ev_1", "seg_1"), rel("r2", "ev_2", "seg_1")],
+    });
+    const schema = buildSchemaGraph(graph, new Set(["ev_1", "seg_1"]));
+
+    expect(schema.edges[0].count).toBe(1);
+    const observations = schema.nodes.find((n) => n.kind === "observation")!;
+    expect(observations.count).toBe(1);
+    // Retaining the unfiltered total is what lets the node say "1 of 2"
+    // rather than silently pretending the second item never existed.
+    expect(observations.totalCount).toBe(2);
+  });
+
+  it("orders edges strongest-first so the formation animation is not arbitrary", () => {
+    const schema = buildSchemaGraph(
+      buildGraph({
+        evidence: [ev("ev_1"), ev("ev_2"), ev("seg_1", { node_type: "semantic_segment" })],
+        relationships: [
+          rel("weak", "ev_1", "ev_2", { status: "tentative" }),
+          rel("s1", "ev_1", "seg_1"),
+          rel("s2", "ev_2", "seg_1"),
+        ],
+      }),
+    );
+    expect(schema.edges.map((e) => e.id)).toEqual(["observation->segment", "observation->observation"]);
   });
 });

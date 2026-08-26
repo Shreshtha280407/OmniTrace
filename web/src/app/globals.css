@@ -145,3 +145,28 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── schema graph edge formation ──────────────────────────────────────────
+   Declared here rather than in the Tailwind keyframes map because the schema
+   graph composes them in an inline `animation` shorthand (per-edge delays, and
+   a draw followed by an optional breathe). Tailwind only emits a keyframe block
+   when a matching animation *utility* is generated, so a name used only from
+   inline styles would be purged. */
+
+@keyframes schema-edge-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Tentative edges never settle. The amplitude is small on purpose: this has to
+   read as "still deciding" out of the corner of the eye without competing with
+   the confirmed structure. The opacity is read from a custom property so that
+   hover dimming still reaches an edge mid-animation. */
+@keyframes schema-edge-breathe {
+  0%, 100% { opacity: var(--schema-edge-opacity, 0.42); }
+  50% { opacity: calc(var(--schema-edge-opacity, 0.42) * 0.55); }
+}
+
+@keyframes schema-label-in {
+  from { opacity: 0; }
+}

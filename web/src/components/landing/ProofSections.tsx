@@ -20,12 +20,35 @@ function useReveal() {
   return { ref, inView };
 }
 
-function SectionHeader({ eyebrow, title, lede }: { eyebrow: string; title: string; lede: string }) {
+/**
+ * Centred section header.
+ *
+ * These were left-aligned at a 42rem measure above full-width cards, so the
+ * heading and the thing it introduced never lined up with each other and the
+ * three sections read as unrelated slabs. Centring relates the header to the
+ * full-width content beneath it, and the index makes the three read as one
+ * argument in sequence.
+ */
+function SectionHeader({
+  index,
+  eyebrow,
+  title,
+  lede,
+}: {
+  index: string;
+  eyebrow: string;
+  title: string;
+  lede: string;
+}) {
   return (
-    <header className="mb-12 max-w-2xl">
-      <p className="eyebrow mb-4">{eyebrow}</p>
+    <header className="mx-auto mb-14 max-w-2xl text-center">
+      <p className="mb-5 flex items-center justify-center gap-2.5">
+        <span className="font-mono text-ui-2xs tabular text-signal-500">{index}</span>
+        <span aria-hidden className="h-px w-6 bg-ink-600" />
+        <span className="font-mono text-ui-2xs uppercase tracking-[0.18em] text-ink-300">{eyebrow}</span>
+      </p>
       <h2 className="text-balance font-display text-display-md text-ink-50">{title}</h2>
-      <p className="mt-4 text-pretty text-ui-lg leading-relaxed text-ink-300">{lede}</p>
+      <p className="mx-auto mt-5 max-w-xl text-pretty text-ui-lg leading-relaxed text-ink-200">{lede}</p>
     </header>
   );
 }
@@ -36,20 +59,21 @@ export function AtomicProofSection() {
   const { ref, inView } = useReveal();
 
   return (
-    <section id="system" className="border-t border-ink-800 bg-ink-950 py-24 sm:py-28">
+    <section id="system" className="border-t border-ink-800 bg-ink-950 py-24 sm:py-32">
       <div ref={ref} className="mx-auto max-w-6xl px-6 sm:px-8">
         <SectionHeader
+          index="01"
           eyebrow="Representation"
           title="Atomic proof is not a text chunk."
           lede="Most pipelines flatten every modality into one pile of text and lose the thing that made it evidence. OmniTrace keeps two objects with two different lifetimes."
         />
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid items-stretch gap-4 md:grid-cols-2">
           <motion.article
             initial={{ opacity: 0, y: 16 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5 }}
-            className="rounded-xl border border-ink-600/70 bg-ink-850/60 p-5"
+            className="flex h-full flex-col rounded-xl border border-ink-600/70 bg-ink-850/60 p-5"
           >
             <div className="mb-4 flex items-center gap-2">
               <span aria-hidden className="size-2 rounded-full" style={{ background: MODALITY_META.speech.hex }} />
@@ -80,7 +104,7 @@ export function AtomicProofSection() {
               ))}
             </dl>
 
-            <p className="mt-4 border-t border-ink-700/60 pt-3 text-ui-2xs leading-relaxed text-ink-400">
+            <p className="mt-auto border-t border-ink-700/60 pt-3 text-ui-2xs leading-relaxed text-ink-300">
               This is the thing you can open, play back and check. It is never rewritten, merged or summarised — later
               stages only ever point at it.
             </p>
@@ -90,7 +114,7 @@ export function AtomicProofSection() {
             initial={{ opacity: 0, y: 16 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="rounded-xl border border-uv-500/25 bg-uv-800/10 p-5"
+            className="flex h-full flex-col rounded-xl border border-uv-500/25 bg-uv-800/10 p-5"
           >
             <div className="mb-4 flex items-center gap-2">
               <span aria-hidden className="size-2 rounded-full bg-uv-400" />
@@ -122,7 +146,7 @@ export function AtomicProofSection() {
               ))}
             </dl>
 
-            <p className="mt-4 border-t border-ink-700/60 pt-3 text-ui-2xs leading-relaxed text-ink-400">
+            <p className="mt-auto border-t border-ink-700/60 pt-3 text-ui-2xs leading-relaxed text-ink-300">
               Sized for meaning so a vector search can find it. It cites its members rather than replacing them, so
               finding the segment always yields the underlying proof.
             </p>
@@ -139,15 +163,16 @@ export function ConnectedContextSection() {
   const { ref, inView } = useReveal();
 
   return (
-    <section className="border-t border-ink-800 bg-ink-900 py-24 sm:py-28">
+    <section className="border-t border-ink-800 bg-ink-900 py-24 sm:py-32">
       <div ref={ref} className="mx-auto max-w-6xl px-6 sm:px-8">
         <SectionHeader
+          index="02"
           eyebrow="Relationships"
           title="Connected context, not coincidence."
           lede="Two things happening at 00:30 in two unrelated recordings is not a relationship. Every link carries a type, a direction, a score, and the timeline it was allowed to form on."
         />
 
-        <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+        <div className="grid items-stretch gap-4 lg:grid-cols-[1.15fr_1fr]">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
@@ -194,7 +219,7 @@ export function ConnectedContextSection() {
                   </text>
                 </motion.g>
               </svg>
-              <p className="mt-4 border-t border-ink-700/60 pt-3 text-ui-2xs leading-relaxed text-ink-400">
+              <p className="mt-auto border-t border-ink-700/60 pt-3 text-ui-2xs leading-relaxed text-ink-300">
                 The timeline guard is what separates a temporal model from a coincidence engine. Cross-source links are
                 still possible — they just have to be earned by entity and semantic signal, not by clock position.
               </p>
@@ -205,7 +230,7 @@ export function ConnectedContextSection() {
             initial={{ opacity: 0, y: 16 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="rounded-xl border border-ink-600/70 bg-ink-850/60 p-5"
+            className="flex h-full flex-col rounded-xl border border-ink-600/70 bg-ink-850/60 p-5"
           >
             <p className="eyebrow mb-4">Assembled semantic event</p>
             <h3 className="text-ui-lg font-medium leading-snug text-ink-50">
@@ -260,9 +285,10 @@ export function EvidenceOnlySection() {
   const { ref, inView } = useReveal();
 
   return (
-    <section id="provenance" className="border-t border-ink-800 bg-ink-950 py-24 sm:py-28">
+    <section id="provenance" className="border-t border-ink-800 bg-ink-950 py-24 sm:py-32">
       <div ref={ref} className="mx-auto max-w-6xl px-6 sm:px-8">
         <SectionHeader
+          index="03"
           eyebrow="Generation"
           title="Evidence-only answers."
           lede="The model is given the retrieved bundle and nothing else. It may cite only IDs inside that bundle, and it is never allowed to state a timestamp or a page in its own words — those are attached afterwards from the stored record."
@@ -282,7 +308,8 @@ export function EvidenceOnlySection() {
           </div>
 
           <div className="grid lg:grid-cols-[1.1fr_1fr]">
-            <div className="border-b border-ink-600/50 p-5 lg:border-b-0 lg:border-r">
+            <div className="flex flex-col border-b border-ink-600/50 p-5 lg:border-b-0 lg:border-r">
+              <div className="flex flex-1 flex-col justify-center">
               <p className="text-pretty text-ui-lg leading-relaxed text-ink-50">
                 It was shown on screen as a three-tier topology diagram with a read-through cache layer.
               </p>
@@ -311,7 +338,9 @@ export function EvidenceOnlySection() {
                 ))}
               </div>
 
-              <p className="mt-5 text-ui-2xs leading-relaxed text-ink-400">
+              </div>
+
+              <p className="pt-6 text-ui-2xs leading-relaxed text-ink-300">
                 Each chip is a live control. Opening one resolves the evidence to its parent asset and seeks the player
                 to the exact millisecond — or opens the page and draws the stored bounding box.
               </p>

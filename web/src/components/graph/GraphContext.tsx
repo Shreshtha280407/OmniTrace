@@ -1,9 +1,8 @@
 "use client";
 
-import { Clock, Layers, ShieldCheck, Waypoints } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
 import { ConfidenceMeter } from "@/components/ui/ConfidenceMeter";
-import { GraphLegend } from "@/components/ui/GraphLegend";
 import { ModalityBadge } from "@/components/ui/ModalityBadge";
 import { FieldRow, PanelSection } from "@/components/ui/PanelShell";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -288,15 +287,6 @@ export function GraphContextRail({
 
       {/* ── coverage against the query ──────────────────────────── */}
       {response && <CoveragePanel response={response} />}
-
-      <PanelSection title="Legend">
-        <GraphLegend
-          modalities={Object.keys(stats.byModality)}
-          relationshipTypes={stats.byRelationshipType}
-          signals={stats.signals}
-          compact
-        />
-      </PanelSection>
     </div>
   );
 }

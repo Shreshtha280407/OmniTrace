@@ -1,9 +1,7 @@
 "use client";
 
-import { Network, Radar } from "lucide-react";
-import Link from "next/link";
+import { Radar } from "lucide-react";
 
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ModalityBadge } from "@/components/ui/ModalityBadge";
 import { FieldRow, PanelSection } from "@/components/ui/PanelShell";
@@ -161,17 +159,14 @@ export function QueryTrace() {
 
       <PanelSection title="Primary event">
         {latestResponse.primary_event_id ? (
-          <div className="space-y-2.5">
-            <p className="font-mono text-ui-2xs text-ink-100" title={latestResponse.primary_event_id}>
-              {truncateId(latestResponse.primary_event_id, 18, 6)}
-            </p>
-            <Button asChild size="sm" variant="secondary" className="w-full">
-              <Link href={`/workspace/graph?event=${encodeURIComponent(latestResponse.primary_event_id)}`}>
-                <Network />
-                Explore graph
-              </Link>
-            </Button>
-          </div>
+          // No "explore graph" action here on purpose: this panel only ever
+          // opens from inside the graph, which is already centred on this
+          // exact event. A link back to the page it is already showing was
+          // dead-end navigation left over from when this panel lived in the
+          // chat instead.
+          <p className="font-mono text-ui-2xs text-ink-100" title={latestResponse.primary_event_id}>
+            {truncateId(latestResponse.primary_event_id, 18, 6)}
+          </p>
         ) : (
           <p className="text-ui-2xs leading-relaxed text-ink-400">
             No event was reached by graph expansion for this query. The bundle was assembled from seed retrieval alone.

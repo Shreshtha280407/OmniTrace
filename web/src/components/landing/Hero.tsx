@@ -41,19 +41,14 @@ export function Hero() {
 
   return (
     <section
-      className="relative isolate overflow-hidden bg-ink-950 pb-0 pt-28 sm:pt-36"
+      className="relative isolate overflow-hidden pb-0 pt-28 sm:pt-36"
       aria-labelledby="hero-heading"
     >
-      {/* Ambient ground. Two wide, very low-opacity pools plus a hairline grid
-          that fades out before it reaches the type. No moving parts. */}
+      {/* The colour field is painted once for the whole page by
+          <AmbientBackground />. What is left here is the hairline grid, which
+          belongs to the hero specifically, and the fade that hands off to the
+          first section. */}
       <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(70% 45% at 50% -8%, rgba(25,214,196,0.10), transparent 62%), radial-gradient(50% 38% at 88% 6%, rgba(122,109,201,0.08), transparent 68%)",
-          }}
-        />
         <div
           className="grid-field absolute inset-0 opacity-60"
           style={{ maskImage: "radial-gradient(70% 55% at 50% 0%, #000 20%, transparent 78%)" }}

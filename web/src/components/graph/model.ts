@@ -125,7 +125,12 @@ export function buildGraph({
       endMs: event.end_ms ?? null,
       sourceId: null,
       seed: false,
-      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
       fixed: true, // the event anchors the whole layout
     });
   }
@@ -145,7 +150,9 @@ export function buildGraph({
       seed: seedIds ? seedIds.has(item._id) : false,
       evidence: item,
       ...position,
-      vx: 0, vy: 0, vz: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
       fixed: false,
     });
   });
@@ -165,7 +172,9 @@ export function buildGraph({
         sourceId: source._id,
         seed: false,
         ...position,
-        vx: 0, vy: 0, vz: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
         fixed: false,
       });
     });
@@ -290,8 +299,12 @@ export function stepLayout(graph: GraphData, options: LayoutOptions = DEFAULT_LA
       const fx = (dx / distance) * force;
       const fy = (dy / distance) * force;
       const fz = (dz / distance) * force;
-      a.vx += fx; a.vy += fy; a.vz += fz;
-      b.vx -= fx; b.vy -= fy; b.vz -= fz;
+      a.vx += fx;
+      a.vy += fy;
+      a.vz += fz;
+      b.vx -= fx;
+      b.vy -= fy;
+      b.vz -= fz;
     }
   }
 
@@ -311,15 +324,21 @@ export function stepLayout(graph: GraphData, options: LayoutOptions = DEFAULT_LA
     const fx = (dx / distance) * force;
     const fy = (dy / distance) * force;
     const fz = (dz / distance) * force;
-    a.vx += fx; a.vy += fy; a.vz += fz;
-    b.vx -= fx; b.vy -= fy; b.vz -= fz;
+    a.vx += fx;
+    a.vy += fy;
+    a.vz += fz;
+    b.vx -= fx;
+    b.vy -= fy;
+    b.vz -= fz;
   });
 
   // integrate
   let energy = 0;
   nodes.forEach((node) => {
     if (node.fixed) {
-      node.vx = 0; node.vy = 0; node.vz = 0;
+      node.vx = 0;
+      node.vy = 0;
+      node.vz = 0;
       return;
     }
     node.vx = (node.vx - node.x * centering) * damping;
@@ -329,7 +348,9 @@ export function stepLayout(graph: GraphData, options: LayoutOptions = DEFAULT_LA
     const speed = Math.hypot(node.vx, node.vy, node.vz);
     if (speed > 1.2) {
       const scale = 1.2 / speed;
-      node.vx *= scale; node.vy *= scale; node.vz *= scale;
+      node.vx *= scale;
+      node.vy *= scale;
+      node.vz *= scale;
     }
     node.x += node.vx;
     node.y += node.vy;
@@ -406,9 +427,7 @@ export function computeStats(graph: GraphData): GraphStats {
 
   return {
     byModality,
-    byRelationshipType: [...typeMap.entries()]
-      .map(([type, v]) => ({ type, ...v }))
-      .sort((a, b) => b.count - a.count),
+    byRelationshipType: [...typeMap.entries()].map(([type, v]) => ({ type, ...v })).sort((a, b) => b.count - a.count),
     confirmedCount,
     tentativeCount,
     meanConfirmedConfidence: confirmedCount > 0 ? confidenceSum / confirmedCount : null,
@@ -434,3 +453,160 @@ export function nodeRadius(node: GraphNode): number {
   const relevance = node.score ?? node.confidence ?? 0.4;
   return 0.13 + Math.min(1, Math.max(0, relevance)) * 0.19;
 }
+
+// ── schema graph ───────────────────────────────────────────────────────────
+
+/**
+ * The five-node view.
+ *
+ * The node kinds are the fixed part of this system: an observation, a segment,
+ * an event, a source and an entity are the only things the data model can
+ * contain, and that is true before any query runs. So they are drawn as five
+ * settled nodes rather than as whatever happened to come back — the shape of
+ * the schema is the constant, and the *edges* are what each query decides.
+ *
+ * Collapsing to kinds is what makes edges worth drawing at all. Twenty
+ * individual evidence items produce a hairball no one can read; the same
+ * relationships grouped by kind produce a handful of arcs that say something
+ * legible — "this query linked segments to an event, tentatively".
+ */
+
+export interface SchemaNode {
+  kind: NodeKind;
+  /** Members passing the current filters. */
+  count: number;
+  /** Members before filtering, so a filtered-to-empty kind reads differently
+   *  from a kind this query never populated. */
+  totalCount: number;
+  memberIds: string[];
+}
+
+export interface SchemaEdge {
+  id: string;
+  from: NodeKind;
+  to: NodeKind;
+  count: number;
+  confirmed: number;
+  tentative: number;
+  /** Dominant status — an edge is only drawn as settled when the confirmed
+   *  relationships behind it outnumber the tentative ones. */
+  status: "confirmed" | "tentative";
+  meanConfidence: number;
+  types: { type: string; count: number }[];
+  dominantType: string;
+}
+
+export interface SchemaGraphData {
+  nodes: SchemaNode[];
+  edges: SchemaEdge[];
+}
+
+/** Ring order, clockwise from the top. Chosen so that the relationships that
+ *  actually occur — source→observation, observation→segment, segment→event —
+ *  land on adjacent vertices and therefore draw as short outer arcs rather
+ *  than as chords across the middle. */
+export const SCHEMA_KIND_ORDER: NodeKind[] = ["event", "segment", "observation", "source", "entity"];
+
+export function buildSchemaGraph(graph: GraphData, visibleIds?: Set<string>): SchemaGraphData {
+  const byKind = new Map<NodeKind, SchemaNode>();
+  SCHEMA_KIND_ORDER.forEach((kind) => {
+    byKind.set(kind, { kind, count: 0, totalCount: 0, memberIds: [] });
+  });
+
+  graph.nodes.forEach((node) => {
+    const entry = byKind.get(node.kind);
+    if (!entry) return;
+    entry.totalCount += 1;
+    if (!visibleIds || visibleIds.has(node.id)) {
+      entry.count += 1;
+      entry.memberIds.push(node.id);
+    }
+  });
+
+  const acc = new Map<
+    string,
+    {
+      from: NodeKind;
+      to: NodeKind;
+      count: number;
+      confirmed: number;
+      tentative: number;
+      confidenceSum: number;
+      types: Map<string, number>;
+    }
+  >();
+
+  graph.edges.forEach((edge) => {
+    // A rejected relationship is a decision the linker made *against* a link;
+    // drawing it would say the opposite of what it means.
+    if (edge.status === "rejected") return;
+
+    const from = graph.nodesById.get(edge.from);
+    const to = graph.nodesById.get(edge.to);
+    if (!from || !to) return;
+    if (visibleIds && (!visibleIds.has(from.id) || !visibleIds.has(to.id))) return;
+
+    const key = `${from.kind}->${to.kind}`;
+    const entry = acc.get(key) ?? {
+      from: from.kind,
+      to: to.kind,
+      count: 0,
+      confirmed: 0,
+      tentative: 0,
+      confidenceSum: 0,
+      types: new Map<string, number>(),
+    };
+
+    entry.count += 1;
+    if (edge.status === "confirmed") entry.confirmed += 1;
+    else entry.tentative += 1;
+    entry.confidenceSum += edge.confidence;
+    entry.types.set(edge.type, (entry.types.get(edge.type) ?? 0) + 1);
+    acc.set(key, entry);
+  });
+
+  const edges: SchemaEdge[] = [...acc.entries()].map(([id, entry]) => {
+    const types = [...entry.types.entries()]
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+    return {
+      id,
+      from: entry.from,
+      to: entry.to,
+      count: entry.count,
+      confirmed: entry.confirmed,
+      tentative: entry.tentative,
+      status: entry.confirmed >= entry.tentative ? "confirmed" : "tentative",
+      meanConfidence: entry.confidenceSum / entry.count,
+      types,
+      dominantType: types[0]?.type ?? "RELATED",
+    };
+  });
+
+  // Stable, meaningful draw order: the strongest relationship forms first, so
+  // the animation reads as the structure asserting itself rather than as an
+  // arbitrary sequence.
+  edges.sort((a, b) => b.confirmed - a.confirmed || b.count - a.count || a.id.localeCompare(b.id));
+
+  return { nodes: SCHEMA_KIND_ORDER.map((kind) => byKind.get(kind)!), edges };
+}
+
+/** Label for a node kind, shared by the schema view and the member cards. */
+export const KIND_LABEL: Record<NodeKind, string> = {
+  observation: "Atomic observation",
+  segment: "Semantic segment",
+  event: "Semantic event",
+  source: "Source",
+  entity: "Entity",
+};
+
+/** Colour per kind. Evidence kinds keep the modality encoding at the item
+ *  level, but a kind node aggregates many modalities, so it takes a neutral
+ *  structural colour instead of pretending to be one of them. */
+export const KIND_COLOR: Record<NodeKind, string> = {
+  event: "#19D6C4",
+  segment: "#5BC8F5",
+  observation: "#9BA8BC",
+  source: "#8B96A8",
+  entity: "#7A6DC9",
+};

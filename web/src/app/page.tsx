@@ -1,3 +1,4 @@
+import { AmbientBackground } from "@/components/landing/AmbientBackground";
 import { Footer } from "@/components/landing/Footer";
 import { Hero } from "@/components/landing/Hero";
 import { Navbar } from "@/components/landing/Navbar";
@@ -14,6 +15,7 @@ import { DemoBadge } from "@/components/ui/DemoBadge";
 export default function LandingPage() {
   return (
     <>
+      <AmbientBackground />
       <DemoBadge variant="banner" />
       <Navbar />
       <main id="main">

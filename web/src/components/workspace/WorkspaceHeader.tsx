@@ -20,7 +20,7 @@ import { useWorkspace } from "./WorkspaceProvider";
  * else it has nothing to draw.
  */
 export function WorkspaceHeader() {
-  const { sessionSources, openSourceFile, activeSession } = useWorkspace();
+  const { sessionSources, openSourceFile } = useWorkspace();
 
   // Deliberately only files the conversation has actually taken on. A file
   // staged in the composer is not in the conversation yet — it can still be
@@ -31,9 +31,11 @@ export function WorkspaceHeader() {
 
   return (
     <div className="flex h-12 shrink-0 items-center gap-2 border-b border-ink-600/70 bg-ink-900/80 px-3 backdrop-blur sm:px-4">
-      <p className="min-w-0 flex-1 truncate text-ui-sm text-ink-200">
-        {activeSession?.turns.length ? activeSession.title : ""}
-      </p>
+      {/* No title here. The rail already names the investigation, and echoing
+          it beside the wordmark restated the same string twice across one
+          header row. The space is left empty so the two controls stay right-
+          aligned. */}
+      <div className="flex-1" />
 
       <Button asChild size="xs" variant="ghost" className="shrink-0">
         <Link href="/workspace/graph">

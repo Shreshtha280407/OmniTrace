@@ -1,13 +1,12 @@
 "use client";
 
-import { AlertCircle, Bug, Loader2, Paperclip, RotateCw, X } from "lucide-react";
+import { AlertCircle, Loader2, Paperclip, RotateCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { CommandInput, type CommandInputHandle } from "@/components/ui/CommandInput";
 import { ModalityBadge } from "@/components/ui/ModalityBadge";
 import { formatBytes } from "@/lib/format";
-import { MODALITIES, MODALITY_META } from "@/lib/modality";
 import { cn } from "@/lib/utils";
 
 import { ACCEPT_ATTRIBUTE, useWorkspace, type PendingUpload } from "./WorkspaceProvider";
@@ -15,16 +14,16 @@ import { ACCEPT_ATTRIBUTE, useWorkspace, type PendingUpload } from "./WorkspaceP
 /**
  * The question composer.
  *
- * Modality filters map to `required_modalities` on POST /query; the debug
- * toggle maps to `debug_trace`. Both are wired straight through — nothing here
- * is decorative.
+ * One control: attach a source. The modality filters and the debug-trace
+ * toggle that used to sit beside it were operator switches on a chat box —
+ * four unlit pills and a bug icon under every question. `required_modalities`
+ * and `debug_trace` are still sent on every query, now always empty and false;
+ * the API contract is unchanged, the surface is not.
  */
 export function Composer() {
   const { submitQuery, cancelQuery, isQuerying, uploads, addFiles } = useWorkspace();
 
   const [question, setQuestion] = useState("");
-  const [required, setRequired] = useState<string[]>([]);
-  const [debugTrace, setDebugTrace] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   const inputRef = useRef<CommandInputHandle>(null);
@@ -47,7 +46,7 @@ export function Composer() {
 
   const submit = () => {
     if (!question.trim() || isQuerying) return;
-    void submitQuery({ question, requiredModalities: required, debugTrace });
+    void submitQuery({ question, requiredModalities: [], debugTrace: false });
     setQuestion("");
   };
 
@@ -112,65 +111,6 @@ export function Composer() {
               <Paperclip />
               Add source
             </Button>
-
-            <span className="mx-0.5 h-4 w-px bg-ink-600" aria-hidden />
-
-            <fieldset className="flex items-center gap-1">
-              <legend className="sr-only">Require these modalities in the answer</legend>
-              {MODALITIES.map((modality) => {
-                const on = required.includes(modality);
-                return (
-                  <button
-                    key={modality}
-                    type="button"
-                    role="switch"
-                    aria-checked={on}
-                    onClick={() =>
-                      setRequired((current) =>
-                        current.includes(modality)
-                          ? current.filter((m) => m !== modality)
-                          : [...current, modality],
-                      )
-                    }
-                    title={`Require ${MODALITY_META[modality].label} evidence`}
-                    className={cn(
-                      // Off is borderless. Four outlined boxes sitting permanently
-                      // unlit made the composer read as a debug toolbar; the
-                      // border is what now *means* "this filter is on".
-                      "inline-flex h-[22px] items-center gap-1 rounded-sm border px-1.5 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors",
-                      on
-                        ? cn(MODALITY_META[modality].border, MODALITY_META[modality].bg, MODALITY_META[modality].text)
-                        : "border-transparent text-ink-400 hover:bg-ink-700/60 hover:text-ink-100",
-                    )}
-                  >
-                    <span
-                      aria-hidden
-                      className={cn("size-1.5 rounded-full", on ? MODALITY_META[modality].dot : "bg-ink-500")}
-                    />
-                    {MODALITY_META[modality].short}
-                  </button>
-                );
-              })}
-            </fieldset>
-
-            <span className="mx-0.5 h-4 w-px bg-ink-600" aria-hidden />
-
-            <button
-              type="button"
-              role="switch"
-              aria-checked={debugTrace}
-              onClick={() => setDebugTrace((v) => !v)}
-              title="Return the retrieval trace with the response"
-              className={cn(
-                "inline-flex h-[22px] items-center gap-1.5 rounded-sm border px-1.5 text-ui-2xs transition-colors",
-                debugTrace
-                  ? "border-uv-500/40 bg-uv-800/40 text-uv-300"
-                  : "border-transparent text-ink-400 hover:bg-ink-700/60 hover:text-ink-100",
-              )}
-            >
-              <Bug className="size-3" aria-hidden />
-              Debug trace
-            </button>
           </>
         }
       />
